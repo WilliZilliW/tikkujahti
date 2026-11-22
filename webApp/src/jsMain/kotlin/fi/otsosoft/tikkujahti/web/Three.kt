@@ -127,5 +127,14 @@ external class DirectionalLight(color: Int, intensity: Double) : Light {
     val target: Object3D
 }
 
+external class CanvasTexture(canvas: HTMLCanvasElement) {
+    var wrapS: Int
+    var wrapT: Int
+    var colorSpace: String
+    var anisotropy: Int
+    val repeat: dynamic
+}
+
+external val RepeatWrapping: Int
 external val DynamicDrawUsage: Int
 external val DoubleSide: Int

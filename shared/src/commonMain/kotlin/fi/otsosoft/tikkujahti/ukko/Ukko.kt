@@ -54,6 +54,8 @@ class Ukko(
 
     // ---- Inputs from the game ----
     var katsoja: V3? = null
+    /** Where the player is looking, if known: the figure prefers to stay in view. */
+    var katsojanSuunta: V3? = null
     var pallo: V3? = null
     var lattia: Pinta? = null
     /** When false the figure only does what it is told (the lab); when true it decides for itself. */
@@ -400,6 +402,10 @@ class Ukko(
                 val d = (p.vaakaan() - k.vaakaan()).pituus
                 val toivottu = 0.9f + luonne.ujous * 1.0f
                 pisteet -= abs(d - toivottu)
+                katsojanSuunta?.let { s ->
+                    val sivussa = fi.otsosoft.tikkujahti.matikka.kulmaValilla(s.vaakaan().suunta(V3.Z), (p - k).vaakaan().suunta(V3.Z))
+                    pisteet -= max(0f, sivussa - 0.15f) * 2.5f
+                }
             }
             pisteet += rnd.nextFloat() * 0.3f
             if (pisteet > parasPisteet) {

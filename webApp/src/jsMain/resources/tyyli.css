@@ -33,3 +33,32 @@ a { color: #3d5bd9; }
 @media (min-width: 800px) {
   .paneeli { right: auto; top: 0; width: 300px; max-height: none; }
 }
+
+/* Game */
+.hud { position: absolute; inset: 0; }
+.kosketus { position: absolute; inset: 0; touch-action: none; }
+.laskuri {
+  position: absolute; left: calc(12px + env(safe-area-inset-left)); top: calc(12px + env(safe-area-inset-top));
+  min-width: 64px; padding: 6px 14px 6px 40px; border-radius: 999px; pointer-events: none;
+  font-size: 22px; font-weight: 700; background: rgba(255, 252, 245, .88); box-shadow: 0 1px 3px rgba(40, 30, 60, .25);
+}
+.laskuri::before {
+  content: ""; position: absolute; left: 8px; top: 50%; width: 24px; height: 24px; margin-top: -12px; border-radius: 50%;
+  background: linear-gradient(160deg, #ffc93c 0 52%, #fff7e6 52%); box-shadow: inset -2px -3px 4px rgba(120, 80, 0, .25);
+}
+.ylanapit {
+  position: absolute; right: calc(12px + env(safe-area-inset-right)); top: calc(12px + env(safe-area-inset-top));
+  display: flex; gap: 8px;
+}
+.nappi {
+  display: inline-block; padding: 8px 14px; border-radius: 999px; text-decoration: none; color: inherit;
+  background: rgba(255, 252, 245, .88); box-shadow: 0 1px 3px rgba(40, 30, 60, .25);
+}
+.nappi.ar { background: #2a2630; color: #fff; font-weight: 600; }
+.vihje {
+  position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%);
+  width: max-content; max-width: 86%; padding: 8px 14px; border-radius: 14px; text-align: center; pointer-events: none;
+  background: rgba(42, 38, 48, .72); color: #fff; transition: opacity .6s;
+}
+.vihje.piilo { opacity: 0; }
+body.ar-tila { background: transparent; }

@@ -114,8 +114,8 @@ class Nakyma(private val isanta: HTMLElement, varjoAlue: Double) {
     val renderoija = WebGLRenderer(olio { antialias = true; alpha = true })
     val scene = Scene()
     val kamera = PerspectiveCamera(50.0, 1.0, 0.02, 50.0)
-    val taivas = HemisphereLight(0xffffff, 0x9a938a, 1.5)
-    val aurinko = DirectionalLight(0xfff4e0, 2.4)
+    val taivas = HemisphereLight(0xffffff, 0xa39c92, 1.35)
+    val aurinko = DirectionalLight(0xfff4e0, 2.0)
 
     init {
         renderoija.setPixelRatio(minOf(window.devicePixelRatio, 2.0))

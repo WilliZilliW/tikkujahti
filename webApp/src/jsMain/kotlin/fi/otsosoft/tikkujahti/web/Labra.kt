@@ -32,6 +32,7 @@ class Labra(private val juuri: HTMLElement) {
         List(24) { i -> (cos(i * PI / 12) * LAVAN_SADE).toFloat() to (sin(i * PI / 12) * LAVAN_SADE).toFloat() },
     )
 
+    private val aanet = Aanet()
     private var variIndeksi = 0
     private var koko = 1f
     private var siemen = 7
@@ -62,6 +63,7 @@ class Labra(private val juuri: HTMLElement) {
         } else {
             rakennaNapit()
             ohjaus()
+            document.addEventListener("pointerdown", { aanet.herata() })
             nakyma.renderoija.setAnimationLoop { aika, _ -> ruutu(aika) }
         }
     }
@@ -92,6 +94,7 @@ class Labra(private val juuri: HTMLElement) {
         edellinen = aika
         asetaKamera()
         ukko.paivita((dt * hidastus).toFloat())
+        for (a in ukko.aanet) aanet.aantely(a, ukko.ulkonako.aani)
         ukko.aanet.clear()
         if (ukko.valmis) uusiUkko()
         piirto?.paivita()

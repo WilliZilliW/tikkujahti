@@ -7,5 +7,6 @@ fun main() {
     val body = document.body as HTMLElement
     when (body.getAttribute("data-sivu")) {
         "labra" -> Labra(body)
+        else -> PeliSivu(body)
     }
 }

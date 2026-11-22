@@ -113,6 +113,7 @@ class Peli(siemen: Int = 1) {
         for (u in ukot) {
             u.lattia = lattia
             u.katsoja = kamera.paikka
+            u.katsojanSuunta = kamera.kehys.eteen
             var lahin: Pallo? = null
             for (pallo in pallot) {
                 if (pallo.tila != PallonTila.LENTAA) continue
@@ -172,9 +173,12 @@ class Peli(siemen: Int = 1) {
         return if (parasS <= 1f) lerp(a, b, parasS) else null
     }
 
-    /** Throws a ball from the player's hand towards where the swipe aimed. */
-    fun heita(heitto: Heitto, kamera: Kamera): Pallo {
-        val alku = kamera.paikka + kamera.kehys.eteen * 0.16f - kamera.kehys.ylos * 0.09f
+    /**
+     * Throws a ball towards where the swipe aimed. It starts from [mista]: where the platform draws the ball
+     * in the player's hand, by default low in front of the camera.
+     */
+    fun heita(heitto: Heitto, kamera: Kamera, mista: V3? = null): Pallo {
+        val alku = mista ?: (kamera.paikka + kamera.kehys.eteen * 0.3f - kamera.kehys.ylos * 0.12f)
         val suunta = kamera.sade(heitto.x, heitto.y)
 
         // The aim point: the first surface the aiming ray meets, or a spot a few metres out
@@ -217,9 +221,11 @@ class Peli(siemen: Int = 1) {
         val lattia = maailma.lattia ?: return
         val eteen = kamera.kehys.eteen.vaakaan().suunta(V3.Z)
         val kulma = suuntakulma(eteen)
+        val nakokentta = kotlin.math.atan(kamera.tanPuoliFov * kamera.kuvasuhde)
         var paikka: V3? = null
         for (yritys in 0 until 20) {
-            val a = kulma + (rnd.nextFloat() - 0.5f) * (0.9f + yritys * 0.15f)
+            // Inside the player's view if possible, wider if the first tries fail
+            val a = kulma + (rnd.nextFloat() - 0.5f) * 2f * (nakokentta * 0.75f + yritys * 0.08f)
             val d = 1.1f + rnd.nextFloat() * 1.3f
             val p = lattia.lahinPiste(V3(kamera.paikka.x + sin(a) * d, lattia.keskus.y, kamera.paikka.z + cos(a) * d), 0.12f)
             val katsojasta = (p - kamera.paikka).vaakaan().pituus
