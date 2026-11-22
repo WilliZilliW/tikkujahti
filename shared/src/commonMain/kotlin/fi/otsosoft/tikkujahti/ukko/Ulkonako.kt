@@ -9,17 +9,17 @@ data class Vari(val r: Float, val g: Float, val b: Float) {
 
 /** Body measurements in metres for a figure of size 1 (about 25 cm tall). */
 class Mitat(val koko: Float) {
-    val reisi = 0.055f * koko
-    val saari = 0.054f * koko
+    val reisi = 0.047f * koko
+    val saari = 0.046f * koko
     val nilkka = 0.008f * koko
     val jalkatera = 0.024f * koko
-    val lonkkaLeveys = 0.011f * koko
+    val lonkkaLeveys = 0.012f * koko
     val olkaLeveys = 0.017f * koko
-    val vartalo = 0.058f * koko
+    val vartalo = 0.066f * koko
     val kaula = 0.011f * koko
-    val paaSade = 0.033f * koko
-    val olkavarsi = 0.040f * koko
-    val kyynarvarsi = 0.038f * koko
+    val paaSade = 0.036f * koko
+    val olkavarsi = 0.043f * koko
+    val kyynarvarsi = 0.041f * koko
     val kasiSade = 0.0078f * koko
     val raajaSade = 0.0058f * koko
     val vartaloSade = 0.0095f * koko

@@ -10,6 +10,7 @@ kotlin {
     js {
         // The game logic needs no browser APIs; logic tests run on the JVM (jvmTest).
         browser()
+        useEsModules()
     }
     sourceSets {
         commonTest.dependencies {

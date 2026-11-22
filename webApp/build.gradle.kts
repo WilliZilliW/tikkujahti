@@ -6,6 +6,8 @@ plugins {
 
 kotlin {
     js {
+        // ES modules: three.js no longer ships a real CommonJS build
+        useEsModules()
         browser {
             commonWebpackConfig {
                 outputFileName = "tikkujahti.js"

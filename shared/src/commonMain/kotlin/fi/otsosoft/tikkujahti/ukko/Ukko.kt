@@ -176,7 +176,7 @@ class Ukko(
     init {
         val f = V3.suunnasta(alkuSuunta)
         val r = f cross V3.Y
-        jalat = arrayOf(Jalka(alku - r * m.lonkkaLeveys * 1.15f), Jalka(alku + r * m.lonkkaLeveys * 1.15f))
+        jalat = arrayOf(Jalka(alku - r * m.lonkkaLeveys * 1.45f), Jalka(alku + r * m.lonkkaLeveys * 1.45f))
         aloita(Toiminto.SAAPUU)
         korkeus = m.pituus * 1.1f
         ilmassa = true
@@ -467,7 +467,7 @@ class Ukko(
                 kamera?.let { o.kaanny = it }
                 val nosto = pehmea(t / 0.3f) * (1f - pehmea((t - toimintoKesto + 0.35f) / 0.35f))
                 val heilu = sin(t * 2f * PI.toFloat() * 2.3f)
-                o.kasiO = olkaO + ylos * (m.kadenPituus * 0.78f) + r * (m.olkaLeveys * 0.9f + heilu * m.kadenPituus * 0.28f) + f * (m.kadenPituus * 0.15f)
+                o.kasiO = olkaO + ylos * (m.kadenPituus * 0.66f) + r * (m.kadenPituus * (0.55f + heilu * 0.25f)) + f * (m.kadenPituus * 0.15f)
                 if (nosto < 0.05f) o.kasiO = null
                 o.kasiJousi = 1.8f
                 o.kallistus = 0.18f * heilu * nosto
@@ -482,7 +482,7 @@ class Ukko(
                     o.kasiJousi = 2.2f
                 }
                 o.kallistus = -0.3f
-                o.katse = paaKeski + h.eteen * 0.5f + ylos * 0.35f + h.oikealle * 0.25f
+                o.katse = paaKeski + f * 0.5f + ylos * 0.22f - r * 0.2f
                 o.kieli = 0f
             }
             Toiminto.HAUKOTTELEE -> {
@@ -496,7 +496,7 @@ class Ukko(
                 }
                 o.noja = f * (-0.18f * venyy)
                 o.kyykky = -0.08f * venyy
-                o.katse = paaKeski + f * 0.5f + ylos * (0.6f * venyy)
+                o.katse = paaKeski + f * 0.5f + ylos * (0.3f * venyy)
             }
             Toiminto.TUULETTAA -> {
                 o.tunne = Tunne.ILOINEN
@@ -505,7 +505,7 @@ class Ukko(
                 kamera?.let { o.kaanny = it }
                 val pumppu = sin(t * 2f * PI.toFloat() * 2.4f)
                 if (t < 1.55f) {
-                    o.kasiO = olkaO + ylos * (m.kadenPituus * (0.62f + 0.25f * pumppu)) + r * (m.olkaLeveys * 0.4f) + f * 0.008f
+                    o.kasiO = olkaO + ylos * (m.kadenPituus * (0.62f + 0.25f * pumppu)) + r * (m.kadenPituus * 0.45f) + f * 0.008f
                     o.kasiV = asento[Nivel.LONKKA_V] - r * (m.lonkkaLeveys * 1.8f) + f * 0.004f + ylos * 0.006f
                     o.kasiJousi = 2.0f
                 }
@@ -668,8 +668,8 @@ class Ukko(
                 venytys.tyonna(-isku * 4f)
                 nopeus = nopeus * 0.3f
                 val r = f cross V3.Y
-                jalat[0].paikka = juuri + nopeus * 0.05f - r * (m.lonkkaLeveys * 1.3f)
-                jalat[1].paikka = juuri + nopeus * 0.05f + r * (m.lonkkaLeveys * 1.3f)
+                jalat[0].paikka = juuri + nopeus * 0.05f - r * (m.lonkkaLeveys * 1.5f)
+                jalat[1].paikka = juuri + nopeus * 0.05f + r * (m.lonkkaLeveys * 1.5f)
                 jalat.forEach { it.askel = false; it.maassa = 0f }
                 aanet += Aantely.ALASTULO
             }
@@ -704,7 +704,7 @@ class Ukko(
         val kesto = clamp(0.23f - vauhti * 0.22f, 0.1f, 0.23f)
         for ((i, j) in jalat.withIndex()) {
             val puoli = if (i == 0) -1f else 1f
-            val ihanne = juuri + r * (puoli * m.lonkkaLeveys * 1.15f) + nopeus * (kesto * 0.9f)
+            val ihanne = juuri + r * (puoli * m.lonkkaLeveys * 1.45f) + nopeus * (kesto * 0.9f)
             if (ilmassa) {
                 j.askel = false
                 j.paikka = ihanne
@@ -735,7 +735,7 @@ class Ukko(
             var parasEro = kynnys
             for ((i, j) in jalat.withIndex()) {
                 val puoli = if (i == 0) -1f else 1f
-                val ihanne = juuri + r * (puoli * m.lonkkaLeveys * 1.15f) + nopeus * (kesto * 0.9f)
+                val ihanne = juuri + r * (puoli * m.lonkkaLeveys * 1.45f) + nopeus * (kesto * 0.9f)
                 val ero = (j.paikka - ihanne).vaakaan().pituus
                 if (ero > parasEro && j.maassa > 0.03f) {
                     parasEro = ero; paras = i
@@ -848,9 +848,9 @@ class Ukko(
             val s = if (puoli == 0) -1f else 1f
             val olka = if (puoli == 0) asento[Nivel.OLKA_V] else asento[Nivel.OLKA_O]
             val swing = if (puoli == 0) swingV else -swingV
-            val oletus = olka - ylos * (m.kadenPituus * (0.86f - 0.25f * juoksuNosto)) +
-                f * (swing + 0.006f * m.koko + juoksuNosto * 0.012f * m.koko) +
-                r * (s * (0.006f * m.koko + vauhti * 0.012f))
+            val oletus = olka - ylos * (m.kadenPituus * (0.93f - 0.3f * juoksuNosto)) +
+                f * (swing + 0.008f * m.koko + juoksuNosto * 0.012f * m.koko) +
+                r * (s * (0.011f * m.koko + vauhti * 0.012f))
             val pyynto = if (puoli == 0) o.kasiV else o.kasiO
             val paino = (if (puoli == 0) painoV else painoO).paivita(dt, if (pyynto != null) 1f else 0f)
             val kohde = if (pyynto != null) lerp(oletus, pyynto, saturoi(paino)) else oletus
@@ -858,7 +858,8 @@ class Ukko(
             jousi.aseta(4.5f * o.kasiJousi, 0.5f, 0.15f)
             val kasi = jousi.paivita(dt, kohde)
             val korkea = saturoi(((kasi - olka) dot ylos) / (m.kadenPituus * 0.5f) + 0.5f)
-            val napa = olka + r * (s * 0.05f) + ylos * lerp(-0.03f, -0.05f, korkea) - f * lerp(0.03f, 0.0f, korkea)
+            // Elbows point back when the hand hangs, out to the side when it is raised
+            val napa = olka + r * (s * lerp(0.012f, 0.05f, korkea)) + ylos * lerp(-0.03f, -0.05f, korkea) - f * lerp(0.06f, 0.0f, korkea)
             val kyynarpaa = kaksiLuuta(olka, kasi, m.olkavarsi, m.kyynarvarsi, napa)
             val kasiTodellinen = kyynarpaa + (kasi - kyynarpaa).suunta(-ylos) * m.kyynarvarsi
             if (puoli == 0) {
