@@ -6,6 +6,9 @@ import fi.otsosoft.tikkujahti.matikka.Kehys
 import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.maailma.Huone
 import fi.otsosoft.tikkujahti.maailma.LattianHaku
+import fi.otsosoft.tikkujahti.maailma.PaikanLaji
+import fi.otsosoft.tikkujahti.maailma.Paikat
+import fi.otsosoft.tikkujahti.maailma.Tunnistin
 import fi.otsosoft.tikkujahti.peli.Aani
 import fi.otsosoft.tikkujahti.peli.Aarre
 import fi.otsosoft.tikkujahti.peli.PalloLaji
@@ -564,6 +567,75 @@ class PeliTest {
         val h2 = LattianHaku()
         h2.ruutu(dt, kam, -1.1f)
         assertEquals(-1.1f, assertNotNull(h2.lattia(kam)).keskus.y, 1e-4f)
+    }
+
+    @Test
+    fun tunnistinKokoaaPinnatMittauksista() {
+        val t = Tunnistin()
+        val rnd = kotlin.random.Random(4)
+        fun kohina() = (rnd.nextFloat() - 0.5f) * 0.02f
+        repeat(300) {
+            // A table top 0.7 m up, a wall behind it seen from 0.3 to 1.5 m, a ceiling, and a slanted thing to ignore
+            t.nayte(V3(rnd.nextFloat() * 1.2f - 0.6f, 0.7f + kohina(), -1f + rnd.nextFloat() * 0.6f), V3(kohina(), 1f, kohina()))
+            t.nayte(V3(rnd.nextFloat() * 2f - 1f, 0.3f + rnd.nextFloat() * 1.2f, -2f + kohina()), V3(kohina(), kohina(), 1f))
+            t.nayte(V3(rnd.nextFloat() - 0.5f, 2.4f + kohina(), rnd.nextFloat() - 0.5f), V3(0f, -1f, 0f))
+            t.nayte(V3(rnd.nextFloat(), 1f, rnd.nextFloat()), V3(0f, 0.7f, 0.7f))
+            // The floor itself is not the recogniser's business
+            t.nayte(V3(rnd.nextFloat() * 2f - 1f, kohina(), rnd.nextFloat() * 2f - 1f), V3.Y)
+        }
+        val pinnat = t.pinnat(0f)
+        assertEquals(setOf(PinnanLaji.POYTA, PinnanLaji.SEINA, PinnanLaji.KATTO), pinnat.map { it.laji }.toSet())
+        assertEquals(3, pinnat.size, "pintoja: " + pinnat.map { it.laji to it.ala })
+        val poyta = pinnat.first { it.laji == PinnanLaji.POYTA }
+        assertEquals(0.7f, poyta.keskus.y, 0.02f)
+        assertTrue(poyta.sisalla(V3(0f, 0.7f, -0.7f)) && !poyta.sisalla(V3(1.2f, 0.7f, -0.7f)) && poyta.ala in 0.5f..1.1f, "pöydän ala ${poyta.ala}")
+        val seina = pinnat.first { it.laji == PinnanLaji.SEINA }
+        assertTrue((seina.normaali - V3.Z).pituus < 0.05f)
+        assertTrue(seina.sisalla(V3(0f, 0.05f, -2f)), "seinä ei ulotu lattiaan")
+        assertTrue(!seina.sisalla(V3(0f, 2.2f, -2f)))
+        // Unchanged surfaces keep their identity; a new measurement changes only its own surface
+        assertTrue(t.pinnat(0f).zip(pinnat).all { (a, b) -> a === b })
+        t.nayte(V3(0.9f, 0.7f, -0.7f), V3.Y)
+        val uudet = t.pinnat(0f)
+        assertTrue(uudet.first { it.laji == PinnanLaji.SEINA } === seina && uudet.first { it.laji == PinnanLaji.POYTA } !== poyta)
+
+        // Places: a nook under the table, and a corner where two walls meet
+        val m = fi.otsosoft.tikkujahti.maailma.Maailma()
+        m.asetaPinnat(uudet + listOf(
+            Pinta.suorakaide("lattia", PinnanLaji.LATTIA, V3.NOLLA, V3.Y, V3.X, 6f, 6f),
+            Pinta.suorakaide("sivuseina", PinnanLaji.SEINA, V3(-1.2f, 1f, -1f), V3.X, V3.Z, 2f, 2f),
+        ))
+        val paikat = Paikat.etsi(m, listOf(V3(1f, 0.02f, 1f), V3(0f, 1.5f, 0f)))
+        assertEquals(setOf(PaikanLaji.KOLO, PaikanLaji.NURKKA, PaikanLaji.VARJO), paikat.map { it.laji }.toSet(), "paikat: " + paikat.map { it.laji to it.piste })
+        val nurkka = paikat.first { it.laji == PaikanLaji.NURKKA }.piste
+        assertTrue((nurkka - V3(-1.2f + Paikat.NURKASTA, 0f, -2f + Paikat.NURKASTA)).pituus < 0.05f, "nurkka $nurkka")
+        assertTrue(Paikat.etsi(m, emptyList()).none { it.laji == PaikanLaji.VARJO })
+        // The browser room has its corners too
+        m.asetaPinnat(Huone.pinnat())
+        assertTrue(Paikat.etsi(m, emptyList()).count { it.laji == PaikanLaji.NURKKA } >= 4)
+    }
+
+    @Test
+    fun ujoUkkoHakeutuuPiiloonJaLoydoistaKerrotaan() {
+        val peli = Peli(2)
+        peli.maailma.asetaPinnat(Huone.pinnat())
+        peli.ukkojaKerralla = 0
+        peli.aarteita = false
+        peli.ilmoitaLoydot = true
+        val k = Kamera(V3(0f, 0.7f, 1.7f), Kehys.luo(V3(0f, -0.28f, -1f)), 0.53f, 0.5f)
+        val u = Ukko(1, Ulkonako(Ulkonako.VARIT[0], luonne = Luonne(ujous = 0.95f, vaistotaito = 0f)), V3(-1.2f, 0f, -1.2f), 0f, 3)
+        peli.ukot += u
+        val tekstit = ArrayList<String>()
+        var lahin = Float.MAX_VALUE
+        repeat(60 * 60) {
+            peli.paivita(dt, k)
+            peli.tapahtumat.mapNotNullTo(tekstit) { it.teksti }
+            val nurkat = peli.maailma.paikat.filter { it.lattialla }
+            if (nurkat.isNotEmpty()) lahin = minOf(lahin, nurkat.minOf { (it.piste - u.juuri).pituus })
+        }
+        assertTrue(lahin < 0.1f, "ujo ukko ei käynyt piilopaikassa (lähimmillään $lahin m)")
+        assertTrue(tekstit.any { "seinän" in it } && tekstit.any { "nurkka" in it }, "ilmoitukset: $tekstit")
+        assertEquals(tekstit.size, tekstit.toSet().size, "sama löytö ilmoitettiin kahdesti")
     }
 
     @Test

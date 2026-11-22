@@ -112,6 +112,11 @@ external class MeshStandardMaterial(params: dynamic = definedExternally) : Mater
 external class MeshBasicMaterial(params: dynamic = definedExternally) : Material
 external class ShadowMaterial(params: dynamic = definedExternally) : Material
 
+external class LineBasicMaterial(params: dynamic = definedExternally) : Material
+external class LineLoop(geometry: BufferGeometry, material: Material) : Object3D {
+    val geometry: BufferGeometry
+}
+
 external class Mesh(geometry: BufferGeometry, material: dynamic) : Object3D {
     val geometry: BufferGeometry
     val material: dynamic

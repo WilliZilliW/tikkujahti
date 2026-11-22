@@ -49,6 +49,17 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
   joutua napauttamaan, ukkojen pitää vain alkaa ilmestyä): ensimmäinen ylöspäin osoittava pinta reilusti
   puhelimen alla on lattia, selvästi alempi korvaa sen, ja 2,5 s:n jälkeen lattia arvataan 1,25 m puhelimen
   alle, kunnes oikea löytyy. Selain syöttää sille hit-testin, Android käyttää arvausta kunnes ARCore löytää tason.
+- **Ympäristön tunnistus** (omistajan toive 22.11.2026: pelin pitää tunnistaa pintoja ja paikkoja aktiivisesti):
+  `maailma/Tunnistin.kt` kokoaa yksittäisistä mittauksista (piste + pinnan suunta) tasoja: pöydät, seinät
+  (jatketaan lattiaan asti), katot. Selaimen AR ampuu joka ruudulla 9 hit-test-sädettä näkymän läpi ja käyttää
+  lisäksi selaimen omia tasoja (`plane-detection`, jos laite tarjoaa); Android syöttää tunnistimelle
+  syvyys- ja piirrepisteosumat 3×3-ruudukosta ARCoren omien tasojen lisäksi (`ArMaailma.mittaa`, DepthMode
+  AUTOMATIC). `Paikat.etsi` päättelee pinnoista paikat: NURKKA (kaksi seinää kohtaa), KOLO (lattia 0,5–1,3 m
+  korkean tason alla), KORKEA (yli 0,8 m tason päällä) ja VARJO. Varjoisat kohdat mitataan vain Androidissa
+  kamerakuvan kirkkaudesta (`ArMaailma.varjot` → `Maailma.varjot`); selaimessa niitä ei ole. Peli käyttää
+  paikkoja: erikoispallot päätyvät niihin (`paivitaAarteet`), ujot ukot ja piiloukot hakeutuvat niihin
+  (`Peli.piilota`), ja AR:ssä uusista löydöistä kerrotaan pelaajalle (`ilmoitaLoydot`). Selaimen AR piirtää
+  tunnistettujen pintojen ääriviivat. **Mitään tästä ei ole ajettu laitteella.**
 - `ukko/Ukko.kt` – aivot ja animaatio, `ukko/Nukke.kt` – ragdoll, `Asento`, `Ulkonako` (mitat, luonne, värit).
   Ukko suosii kävelykohteita pelaajan näkökentässä (`katsojanSuunta`).
 - `mesh/Verkko.kt` – kiinteän topologian verkko osittain (materiaaleittain). `mesh/UkkoVerkko.kt` – ukko:
@@ -114,13 +125,16 @@ ja tarkista, että ajot menivät läpi.
 - WebXR: omistaja on käynnistänyt AR-tilan puhelimella (lattian napautus toimi; se korvattiin sittemmin
   automaattisella haulla, jota ei ole laitteella kokeiltu). Tarkistamatta: osuuko arvattu/löydetty lattia
   kohdalleen, pyyhkäisy dom-overlayn läpi, varjo (`ShadowMaterial`).
+- Ympäristön tunnistus: syntyykö pöydistä, seinistä ja katosta pintoja katselemalla, osuvatko ääriviivat
+  kohdalleen, löytyykö varjoisia kohtia (Android), häiritseekö DepthMode AUTOMATIC mitään.
 - Heiton tuntuma (`Pyyhkaisy.lopeta`, `Peli.heita`: vauhti 3,2–7,5 m/s, `TAHTAYSAPU`, `OSUMA_APU`) ja
   väistöjen määrä (`Luonne.vaistotaito` 0,15–0,65) ovat arvauksia: säädä palautteen mukaan.
 
 ## Seuraavaksi
 1. Laitepalaute yllä olevista ja korjaukset. Äänien kuuntelu ja viritys.
 2. Issue #1:n "Ensimmäinen versio" -listan ruksit, kun omistaja on todennut kohdat laitteella.
-3. Issue #1:n seuraavat asiat: reunalla roikkuminen, ukot piiloon esineiden taakse kurkkimaan, ketjut ja
+3. Issue #1:n seuraavat asiat: reunalla roikkuminen, ukot piiloon esineiden taakse kurkkimaan (paikat ovat
+   nyt olemassa: `Maailma.paikat`), ketjut ja
    tornit, hyppiminen pinnalta toiselle, piilopaikat jotka vaihtuvat päivittäin, hatut ja asut, ukkokylä. Albumin vihjeet ja tyyppien yleisyys (`Peli.YLEISYYS`) kaipaavat pelitestausta.
 4. Depth API (piiloutuminen, osumat oikeisiin pintoihin), valon arvio selaimen AR:ään.
 5. Ehdota pilviympäristön asennusskriptiksi yllä oleva SDK-asennus.

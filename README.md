@@ -42,6 +42,9 @@ liikettä ja ilmettä kokeilla napista, myös hidastettuna.
   löytymättömistä on vihje.
 - AR:ssä ei tarvitse tehdä mitään alkuun: katsele puhelimella lattiaa, niin ukot alkavat ilmestyä. Peli
   etsii lattian itse ja tarkentaa sen paikkaa pelin aikana.
+- **Peli oppii huoneen** sitä mukaa kuin katselet ympärillesi: lattian lisäksi pöydät ja muut tasot, seinät
+  ja katon, sekä niistä nurkat, kolot tasojen alla, korkeat paikat ja (sovelluksessa) varjoisat kohdat. Ujot
+  ukot ja piiloukot hakeutuvat niihin, ja erikoispallot päätyvät niihin. Uusista löydöistä tulee ilmoitus.
 - Selaimen huoneessa: vedä ruudun yläosasta katsellaksesi ympärillesi.
 
 ## Rakenne

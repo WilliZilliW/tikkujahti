@@ -1,6 +1,8 @@
 package fi.otsosoft.tikkujahti.peli
 
 import fi.otsosoft.tikkujahti.maailma.Maailma
+import fi.otsosoft.tikkujahti.maailma.PaikanLaji
+import fi.otsosoft.tikkujahti.maailma.Paikat
 import fi.otsosoft.tikkujahti.maailma.PinnanLaji
 import fi.otsosoft.tikkujahti.maailma.Pinta
 import fi.otsosoft.tikkujahti.matikka.V3
@@ -91,6 +93,10 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
      * to keep it. Platforms that pass taps on switch this on.
      */
     var pyristely = false
+    /** Whether to tell the player when a new kind of surface or spot is recognised (AR, where the room is unknown). */
+    var ilmoitaLoydot = false
+    private var paikkaAjastin = 0f
+    private val loydetyt = HashSet<String>()
     /** Whether special balls turn up in the room. */
     var aarteita = true
 
@@ -125,6 +131,11 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
                 ukkoAjastin = 1.5f + rnd.nextFloat() * 2.5f
                 uusiUkko(kamera, lattia)
             }
+        }
+        paikkaAjastin -= dt
+        if (paikkaAjastin <= 0f) {
+            paikkaAjastin = 1f
+            tutkiHuone()
         }
         if (lattia != null && aarteita) paivitaAarteet(dt, kamera)
 
@@ -200,6 +211,7 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
             }
             if (u.ulkonako.tyyppi == Tyyppi.KIIPEILIJA || u.ulkonako.tyyppi == Tyyppi.NINJA) ohjaaKiipeilijaa(u, dt, lattia)
             istuta(u, dt)
+            piilota(u, dt)
             u.paivita(dt)
             for (a in u.aanet) tapahtumat += Tapahtuma(Aani.AANTELY, u.keskipiste, aantely = a, korkeus = u.ulkonako.aani)
             u.aanet.clear()
@@ -296,6 +308,38 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         val jalat = reuna + ulos * (0.05f * u.m.koko) - pinta.normaali * (0.06f * u.m.koko)
         if (maailma.pinnat.any { it !== pinta && abs(it.etaisyys(jalat)) < 0.08f && it.sisalla(jalat, 0.02f) }) return
         u.istuReunalle(reuna, ulos)
+    }
+
+    /** Works out the room's spots again, and tells the player about the first of each new kind of thing found. */
+    private fun tutkiHuone() {
+        maailma.paikat = Paikat.etsi(maailma, maailma.varjot)
+        if (!ilmoitaLoydot || maailma.lattia == null) return
+        val kamera = ukot.firstOrNull()?.katsoja ?: maailma.lattia!!.keskus
+        fun loyto(avain: String, teksti: String) {
+            if (loydetyt.add(avain)) tapahtumat += Tapahtuma(Aani.KIMALLUS, kamera, 0.5f, teksti = teksti)
+        }
+        for (p in maailma.pinnat) when (p.laji) {
+            PinnanLaji.SEINA -> loyto("seina", "Tunnistin seinän: kiipeilijät pääsevät sille.")
+            PinnanLaji.POYTA -> loyto("poyta", "Tunnistin tason: ukot voivat istua sen reunalla.")
+            PinnanLaji.KATTO -> loyto("katto", "Tunnistin katon: kattoukot roikkuvat siitä.")
+            else -> {}
+        }
+        for (p in maailma.paikat) when (p.laji) {
+            PaikanLaji.NURKKA -> loyto("nurkka", "Löytyi nurkka: ujot ukot piiloutuvat sinne.")
+            PaikanLaji.KOLO -> loyto("kolo", "Löytyi kolo tason alta: sieltä voi löytyä jotain.")
+            PaikanLaji.VARJO -> loyto("varjo", "Löytyi varjoisa paikka: siellä viihtyvät piiloukot.")
+            PaikanLaji.KORKEA -> loyto("korkea", "Löytyi korkea paikka: sinne päätyy erikoispalloja.")
+        }
+    }
+
+    /** Shy figures and the invisible one slip off to corners, nooks and shadows, and peek out from there. */
+    private fun piilota(u: Ukko, dt: Float) {
+        val tyyppi = u.ulkonako.tyyppi
+        val ujo = tyyppi == Tyyppi.PIILO || (tyyppi == Tyyppi.TAVALLINEN && u.ulkonako.luonne.ujous > 0.6f)
+        if (!ujo || !u.omatoiminen || u.toiminto != Toiminto.SEISOO || u.ilmassa || u.lattia?.laji != PinnanLaji.LATTIA) return
+        if (rnd.nextFloat() > dt * 0.2f) return
+        val paikka = maailma.paikat.filter { it.lattialla && (it.piste - u.juuri).pituus in 0.25f..3f }.minByOrNull { (it.piste - u.juuri).pituus } ?: return
+        u.meneKohti(paikka.piste, u.ulkonako.luonne.ujous > 0.85f)
     }
 
     /** A herd moves as one: every few seconds the whole group heads for a new spot. */
@@ -620,6 +664,15 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         // More often than not, the ball that suits a figure that is out right now
         val sopivat = ukot.filter { !it.kiinni }.mapNotNull { sopivaPallo(it.ulkonako.tyyppi) }.filter { reppu[it] == 0 }
         val laji = if (sopivat.isNotEmpty() && rnd.nextFloat() < 0.65f) sopivat.random(rnd) else PalloLaji.entries[1 + rnd.nextInt(PalloLaji.entries.size - 1)]
+        // Special balls end up where things get lost: nooks, corners, shadows, the tops of tall things
+        val paikat = maailma.paikat.filter { p ->
+            val d = (p.piste - kamera.paikka).vaakaan().pituus
+            d in 0.7f..4f && aarteet.none { (it.paikka - p.piste).pituus < 0.3f } && ukot.none { (it.juuri - p.piste).pituus < 0.25f }
+        }
+        if (paikat.isNotEmpty() && rnd.nextFloat() < 0.6f) {
+            aarteet += Aarre(laji, paikat.random(rnd).piste + V3.Y * 0.07f)
+            return
+        }
         val pinnat = maailma.vaakapinnat
         for (yritys in 0 until 12) {
             val pinta = pinnat.randomOrNull(rnd) ?: return

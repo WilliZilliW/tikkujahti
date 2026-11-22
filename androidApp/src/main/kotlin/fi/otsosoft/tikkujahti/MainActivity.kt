@@ -48,6 +48,7 @@ import com.google.ar.core.Frame
 import com.google.ar.core.Plane
 import com.google.ar.core.Session
 import fi.otsosoft.tikkujahti.maailma.LattianHaku
+import fi.otsosoft.tikkujahti.maailma.Tunnistin
 import fi.otsosoft.tikkujahti.matikka.Kehys
 import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.matikka.pehmea
@@ -94,6 +95,7 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
 
     init {
         peli.pyristely = true
+        peli.ilmoitaLoydot = true
     }
     private var seuranta = false
 
@@ -108,10 +110,15 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
     var pelissa = false
         private set
     private val haku = LattianHaku()
+    private val tunnistin = Tunnistin()
+    private var mittausAjastin = 0f
+    private var varjoAjastin = 0f
+    private var aika = 0f
+    private val varjot = ArrayList<Pair<V3, Float>>()
     val kadenKoko: Float get() = pehmea(-kasiTauko / 0.2f)
 
     /** One AR frame: read the room and the camera, then advance the game. */
-    fun ruutu(session: Session, frame: Frame) {
+    fun ruutu(session: Session, frame: Frame, koko: IntSize) {
         val nyt = frame.timestamp
         val dt = if (edellinen == 0L) 0.016f else ((nyt - edellinen) / 1e9f).coerceIn(0f, 0.05f)
         edellinen = nyt
@@ -122,7 +129,31 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         // Until ARCore has found the floor, play on a guessed one, so that figures turn up without a wait
         haku.ruutu(dt, kamera.paikka, null)
         val arvaus = if (lattiataso == null) haku.lattia(kamera.paikka) else null
-        peli.maailma.asetaPinnat(if (arvaus != null) pinnat + arvaus else pinnat)
+        val lattiaY = lattiataso?.centerPose?.ty() ?: arvaus?.keskus?.y
+        // The room is probed all the time, beyond the planes ARCore finds by itself
+        mittausAjastin -= dt
+        if (mittausAjastin <= 0f && koko.width > 0) {
+            mittausAjastin = 0.15f
+            ArMaailma.mittaa(frame, koko.width, koko.height, tunnistin)
+        }
+        val kaikki = ArrayList(pinnat)
+        if (arvaus != null) kaikki += arvaus
+        for (t in tunnistin.pinnat(lattiaY)) {
+            val keski = t.pisteTasolta(0f, 0f)
+            if (kaikki.none { it.laji == t.laji && kotlin.math.abs(it.etaisyys(keski)) < 0.1f && it.sisalla(keski, 0.1f) }) kaikki += t
+        }
+        peli.maailma.asetaPinnat(kaikki)
+        // Dark spots from the camera image, remembered for a while
+        varjoAjastin -= dt
+        if (varjoAjastin <= 0f) {
+            varjoAjastin = 1.2f
+            aika += 1.2f
+            varjot.removeAll { aika - it.second > 90f }
+            for (v in ArMaailma.varjot(frame)) {
+                if (varjot.none { (it.first - v).pituus < 0.4f } && varjot.size < 8) varjot += v to aika
+            }
+            peli.maailma.varjot = varjot.map { it.first }
+        }
         pelissa = peli.maailma.lattia != null
         peli.paivita(dt, kamera)
         for (t in peli.tapahtumat) {
@@ -238,11 +269,12 @@ fun PeliNakyma() {
             materialLoader = materiaalit,
             scene = scene,
             planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL,
-            depthMode = Config.DepthMode.DISABLED,
+            // Depth, where the phone has it, lets the game measure surfaces ARCore makes no planes of
+            depthMode = Config.DepthMode.AUTOMATIC,
             // The dots that show detected surfaces help until the floor is found, then get in the way
             planeRenderer = lattia == null,
             onSessionUpdated = { session, frame ->
-                tila.ruutu(session, frame)
+                tila.ruutu(session, frame, koko)
                 piirtaja.paivita(tila.peli, tila.kadenPaikka(), tila.kadenKoko)
                 lattia = tila.lattia
                 pelissa = tila.pelissa

@@ -2,6 +2,7 @@ package fi.otsosoft.tikkujahti.web
 
 import fi.otsosoft.tikkujahti.maailma.Huone
 import fi.otsosoft.tikkujahti.maailma.LattianHaku
+import fi.otsosoft.tikkujahti.maailma.Tunnistin
 import fi.otsosoft.tikkujahti.maailma.PinnanLaji
 import fi.otsosoft.tikkujahti.maailma.Pinta
 import fi.otsosoft.tikkujahti.matikka.Kehys
@@ -59,7 +60,13 @@ class PeliSivu(private val juuri: HTMLElement) {
 
     // AR
     private var ar: dynamic = null
-    private var osumalahde: dynamic = null
+    private val osumalahteet = ArrayList<dynamic>()
+    private var tunnistin = Tunnistin()
+    private var pintaAjastin = 0f
+    private var seuraavaTaso = 1
+    private val aariviivat = Group()
+    private val viivat = ArrayList<LineLoop>()
+    private val viivaAine = LineBasicMaterial(olio { color = 0xffffff; transparent = true; opacity = 0.35 })
     private var arLattia = false
     private var haku = LattianHaku()
     private val varjotaso = Mesh(PlaneGeometry(8.0, 8.0).rotateX(-PI / 2), ShadowMaterial(olio { opacity = 0.32 }))
@@ -84,6 +91,7 @@ class PeliSivu(private val juuri: HTMLElement) {
         varjotaso.visible = false
         varjotaso.receiveShadow = true
         nakyma.scene.add(varjotaso)
+        nakyma.scene.add(aariviivat)
         kasiPallo.mesh.castShadow = false
         nakyma.kamera.add(kasiPallo.mesh)
         peli.maailma.asetaPinnat(Huone.pinnat())
@@ -331,14 +339,17 @@ class PeliSivu(private val juuri: HTMLElement) {
         val xr = window.navigator.asDynamic().xr
         val asetukset = olio {
             requiredFeatures = arrayOf("hit-test")
-            optionalFeatures = arrayOf("dom-overlay")
+            optionalFeatures = arrayOf("dom-overlay", "plane-detection")
             domOverlay = olio { root = hud }
         }
         xr.requestSession("immersive-ar", asetukset).then({ istunto: dynamic ->
             ar = istunto
             arLattia = false
             haku = LattianHaku()
+            tunnistin = Tunnistin()
+            osumalahteet.clear()
             uusiPeli()
+            peli.ilmoitaLoydot = true
             huone.visible = false
             document.body?.classList?.add("ar-tila")
             arNappi?.textContent = "Lopeta AR"
@@ -348,7 +359,14 @@ class PeliSivu(private val juuri: HTMLElement) {
             nakyma.renderoija.xr.setReferenceSpaceType("local")
             nakyma.renderoija.xr.setSession(istunto)
             istunto.requestReferenceSpace("viewer").then { katsoja: dynamic ->
-                istunto.requestHitTestSource(olio { space = katsoja }).then { lahde: dynamic -> osumalahde = lahde }
+                // A fan of probing rays: straight ahead, and to the sides, up and down (x right, y up, as slopes)
+                val sadeLuokka = window.asDynamic().XRRay
+                for ((x, y) in MITTAUSSUUNNAT) {
+                    val asetus = olio { space = katsoja }
+                    if (sadeLuokka != undefined && (x != 0.0 || y != 0.0)) asetus.offsetRay = uusiSade(sadeLuokka, olio { this.x = 0.0; this.y = 0.0; z = 0.0; w = 1.0 }, olio { this.x = x; this.y = y; z = -1.0; w = 0.0 })
+                    else if (x != 0.0 || y != 0.0) continue
+                    istunto.requestHitTestSource(asetus).then { lahde: dynamic -> osumalahteet.add(lahde) }
+                }
             }
             istunto.addEventListener("select", {
                 if (arLattia && (istunto.domOverlayState == null || istunto.domOverlayState == undefined)) {
@@ -365,7 +383,8 @@ class PeliSivu(private val juuri: HTMLElement) {
 
     private fun lopetaAr() {
         ar = null
-        osumalahde = null
+        osumalahteet.clear()
+        piirraAariviivat(emptyList())
         arLattia = false
         varjotaso.visible = false
         huone.visible = true
@@ -378,6 +397,8 @@ class PeliSivu(private val juuri: HTMLElement) {
         asetaValo(V3.NOLLA)
         nakyma.sovita()
     }
+
+    private fun uusiSade(luokka: dynamic, alku: dynamic, suunta: dynamic): dynamic = js("new luokka(alku, suunta)")
 
     private fun uusiPeli() {
         tallennettu = 0
@@ -404,27 +425,86 @@ class PeliSivu(private val juuri: HTMLElement) {
             kamera.tanPuoliFov = (1.0 / (proj[5] as Double)).toFloat()
             kamera.kuvasuhde = ((proj[5] as Double) / (proj[0] as Double)).toFloat()
         }
-        // The floor is found without the player doing anything: whatever upward surface is under the middle
-        // of the view, or a guess if nothing has been seen yet
+        // The room is probed all the time: a fan of rays through the view, each hit a point on some surface.
+        // Upward hits find the floor; all of them feed the recogniser, which grows tables, walls and ceilings.
         var havaittu: Float? = null
-        if (osumalahde != null) {
-            val osumat = xrRuutu.getHitTestResults(osumalahde)
-            if ((osumat.length as Int) > 0) {
-                val m = osumat[0].getPose(tila)?.transform?.matrix
-                if (m != null && m != undefined && (m[5] as Double) > 0.9) havaittu = (m[13] as Double).toFloat()
-            }
+        for (lahde in osumalahteet) {
+            val osumat = xrRuutu.getHitTestResults(lahde)
+            if ((osumat.length as Int) == 0) continue
+            val m = osumat[0].getPose(tila)?.transform?.matrix
+            if (m == null || m == undefined) continue
+            val p = V3((m[12] as Double).toFloat(), (m[13] as Double).toFloat(), (m[14] as Double).toFloat())
+            val n = V3((m[4] as Double).toFloat(), (m[5] as Double).toFloat(), (m[6] as Double).toFloat())
+            tunnistin.nayte(p, n)
+            if (n.y > 0.9f && (havaittu == null || p.y < havaittu)) havaittu = p.y
         }
         haku.ruutu(dt, kamera.paikka, havaittu)
-        val lattia = haku.lattia(kamera.paikka)
-        if (lattia != null && lattia !== peli.maailma.lattia) {
-            peli.maailma.asetaPinnat(listOf(lattia))
-            varjotaso.visible = true
-            varjotaso.position.set(lattia.keskus.x.toDouble(), lattia.keskus.y.toDouble(), lattia.keskus.z.toDouble())
-            asetaValo(lattia.keskus)
-            if (!arLattia) {
-                arLattia = true
-                vihje.textContent = "Pyyhkäise ylöspäin heittääksesi pallon."
+        val lattia = haku.lattia(kamera.paikka) ?: return
+        pintaAjastin -= dt
+        if (lattia === peli.maailma.lattia && pintaAjastin > 0f) return
+        pintaAjastin = 0.4f
+        val pinnat = ArrayList<Pinta>()
+        pinnat += lattia
+        pinnat += selaimenTasot(xrRuutu, tila, lattia.keskus.y)
+        // (the recogniser's surfaces where the browser's own plane finder has none)
+        for (t in tunnistin.pinnat(lattia.keskus.y)) {
+            val keski = t.pisteTasolta(0f, 0f)
+            if (pinnat.none { it.laji == t.laji && kotlin.math.abs(it.etaisyys(keski)) < 0.1f && it.sisalla(keski, 0.1f) }) pinnat += t
+        }
+        peli.maailma.asetaPinnat(pinnat)
+        piirraAariviivat(pinnat)
+        varjotaso.visible = true
+        varjotaso.position.set(lattia.keskus.x.toDouble(), lattia.keskus.y.toDouble(), lattia.keskus.z.toDouble())
+        asetaValo(lattia.keskus)
+        if (!arLattia) {
+            arLattia = true
+            vihje.textContent = "Pyyhkäise ylöspäin heittääksesi pallon. Katsele ympärillesi: peli oppii huoneen."
+        }
+    }
+
+    /** The planes the browser itself has detected (WebXR plane detection, where the device offers it). */
+    private fun selaimenTasot(xrRuutu: dynamic, tila: dynamic, lattiaY: Float): List<Pinta> {
+        val tasot = xrRuutu.detectedPlanes
+        if (tasot == null || tasot == undefined) return emptyList()
+        val ulos = ArrayList<Pinta>()
+        tasot.forEach({ taso: dynamic ->
+            val m = xrRuutu.getPose(taso.planeSpace, tila)?.transform?.matrix
+            val monikulmio = taso.polygon
+            if (m != null && m != undefined && monikulmio != null && (monikulmio.length as Int) >= 4) {
+                val keskus = V3((m[12] as Double).toFloat(), (m[13] as Double).toFloat(), (m[14] as Double).toFloat())
+                val n = V3((m[4] as Double).toFloat(), (m[5] as Double).toFloat(), (m[6] as Double).toFloat())
+                val laji = Tunnistin.luokittele(n, keskus.y, lattiaY)
+                if (laji != null) {
+                    // A stable name per plane, so that figures stay on their surface as it is refined
+                    if (taso.tikkuId == undefined) taso.tikkuId = "xr${seuraavaTaso++}"
+                    // The polygon is a closed loop of (x, 0, z) in the plane's space; our second axis is -z
+                    val reuna = List((monikulmio.length as Int) - 1) { i -> (monikulmio[i].x as Double).toFloat() to -(monikulmio[i].z as Double).toFloat() }
+                    ulos += Pinta(taso.tikkuId as String, laji, keskus, n, V3((m[0] as Double).toFloat(), (m[1] as Double).toFloat(), (m[2] as Double).toFloat()), reuna)
+                }
             }
+        })
+        return ulos
+    }
+
+    /** Faint outlines of every recognised surface, so the player sees what the game has understood of the room. */
+    private fun piirraAariviivat(pinnat: List<Pinta>) {
+        for (v in viivat) {
+            aariviivat.remove(v); v.geometry.dispose()
+        }
+        viivat.clear()
+        for (p in pinnat) {
+            if (p.laji == PinnanLaji.LATTIA) continue
+            val a = FloatArray(p.reuna.size * 3)
+            for ((i, kulma) in p.reuna.withIndex()) {
+                val w = p.pisteTasolta(kulma.first, kulma.second) + p.normaali * 0.006f
+                a[i * 3] = w.x; a[i * 3 + 1] = w.y; a[i * 3 + 2] = w.z
+            }
+            val g = BufferGeometry()
+            g.setAttribute("position", BufferAttribute(a, 3))
+            val v = LineLoop(g, viivaAine)
+            v.frustumCulled = false
+            viivat += v
+            aariviivat.add(v)
         }
     }
 
@@ -562,6 +642,9 @@ class PeliSivu(private val juuri: HTMLElement) {
             Tyyppi.PIILO -> Ulkonako.HAALEA
             else -> Ulkonako.VARIT[t.ordinal % Ulkonako.VARIT.size]
         }
+
+        /** Slopes (right, up) of the rays that probe the room in AR. */
+        val MITTAUSSUUNNAT = listOf(0.0 to 0.0, -0.22 to 0.0, 0.22 to 0.0, 0.0 to 0.3, 0.0 to -0.3, -0.2 to -0.28, 0.2 to -0.28, -0.2 to 0.28, 0.2 to 0.28)
 
         const val KASI_LEPO_Y = -0.72f
         const val KASI_SYVYYS = 0.5f

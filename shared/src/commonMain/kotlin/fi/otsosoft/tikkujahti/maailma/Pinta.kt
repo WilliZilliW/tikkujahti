@@ -171,6 +171,11 @@ class Maailma {
         pinnat = uudet
     }
 
+    /** Dark spots the platform has measured from the camera image (points on or near the floor). */
+    var varjot: List<V3> = emptyList()
+    /** The interesting spots of the room, worked out from the surfaces by the game every now and then. */
+    var paikat: List<Paikka> = emptyList()
+
     /** Floors and table tops. */
     val vaakapinnat: List<Pinta> get() = pinnat.filter { it.onVaaka && it.normaali.y > 0f }
 
