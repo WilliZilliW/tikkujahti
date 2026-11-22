@@ -95,6 +95,9 @@ Maven Centralista (`io/github/sceneview/`).
 `.github/workflows/`: `apk.yml` (testi-APK rullaavaan `testi`-esijulkaisuun), `pages.yml` (selainversio
 GitHub Pagesiin), `julkaisu.yml` (AAB tagista; salaisuudet vielä lisäämättä). Oletushaara on `main`, Pages on
 päällä, ja molemmat ajot menivät läpi ensimmäisestä `main`-pushista. Julkaisu: työnnä `main`iin.
+**Omistajan toive (22.11.2026): julkaise aina välillä.** Kun jokin kokonaisuus on valmis, testit menevät läpi ja
+kaikki kolme rakentuvat, työnnä se kehityshaaran lisäksi `main`iin kysymättä (`git push origin <haara> <haara>:main`)
+ja tarkista, että ajot menivät läpi.
 
 ## Tarkistettava laitteella (ei voi pilvessä)
 - Android: näkyvätkö ukot ja pallot (materiaali `createColorInstance`, TANGENTS-kvaterniot), varjo lattialla
