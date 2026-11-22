@@ -28,6 +28,9 @@ liikettä ja ilmettä kokeilla napista, myös hidastettuna.
 - Pallo pomppii lattiasta, seinistä ja huonekaluista, joten ukkoon voi osua myös pompun kautta.
 - Ukot näkevät pallon tulevan: taitavat väistävät hyppäämällä tai kyykistymällä ja tuulettavat
   tai kiusoittelevat perään. Läheltä mennyt pallo säikäyttää.
+- Ukkoja on erilaisia: nopea juoksija ei pysy paikallaan, iso ukko vaatii kolme osumaa ja harvinainen
+  kultainen väistää melkein kaiken. Peräkkäiset kiinniotot ilman hutia kasvattavat pistekerrointa, ja
+  löydetyt ukot kertyvät albumiin.
 - Sovelluksessa: liikuttele puhelinta hitaasti ja osoita lattiaa, niin ukot ilmestyvät, kun lattia on
   tunnistettu. Selaimen AR-tilassa napauta lattiaa, kun rengas näkyy.
 - Selaimen huoneessa: vedä ruudun yläosasta katsellaksesi ympärillesi.

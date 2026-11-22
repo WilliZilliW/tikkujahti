@@ -6,13 +6,13 @@ import fi.otsosoft.tikkujahti.maailma.Pinta
 import fi.otsosoft.tikkujahti.matikka.Kehys
 import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.matikka.pehmea
+import fi.otsosoft.tikkujahti.peli.Albumi
 import fi.otsosoft.tikkujahti.peli.Heitto
 import fi.otsosoft.tikkujahti.peli.Kamera
 import fi.otsosoft.tikkujahti.peli.Pallo
 import fi.otsosoft.tikkujahti.peli.Peli
 import fi.otsosoft.tikkujahti.peli.Pyyhkaisy
-import fi.otsosoft.tikkujahti.ukko.Ukko
-import fi.otsosoft.tikkujahti.ukko.Vari
+import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.HTMLCanvasElement
@@ -34,11 +34,11 @@ import kotlin.math.tan
  */
 class PeliSivu(private val juuri: HTMLElement) {
     private val nakyma = Nakyma(el("div", "nakyma", juuri), 3.3)
-    private var peli = Peli()
+    private var peli = Peli(1, Tallennus.lueAlbumi())
     private val aanet = Aanet()
     private val kamera = Kamera(V3(0f, 0.7f, 1.7f), Kehys.luo(-V3.Z), tan(25.0 * PI / 180).toFloat(), 1f)
-    private val ukkoPiirrot = HashMap<Ukko, UkkoPiirto>()
-    private val palloPiirrot = HashMap<Pallo, PalloPiirto>()
+    private val piirto = PeliPiirto(nakyma.scene)
+    private var tallennettu = 0
     private val huone = Group()
     private val pyyhkaisy = Pyyhkaisy()
 
@@ -47,7 +47,7 @@ class PeliSivu(private val juuri: HTMLElement) {
     private var kallistus = -0.28
 
     // The ball in the player's hand: where it is on the screen (-1…1), and when it comes back after a throw
-    private val kasiPallo = PalloPiirto(PALLO_A, PALLO_B)
+    private val kasiPallo = PalloPiirto(PeliPiirto.PALLO_A, PeliPiirto.PALLO_B)
     private var kasiX = 0f
     private var kasiY = KASI_LEPO_Y
     private var kasiTauko = 0.0
@@ -64,6 +64,7 @@ class PeliSivu(private val juuri: HTMLElement) {
     private val hud = el("div", "hud", juuri)
     private val kosketus = el("div", "kosketus", hud)
     private val laskuri = el("div", "laskuri", hud)
+    private val putki = el("div", "putki", hud)
     private val vihje = el("div", "vihje", hud)
     private val napit = el("div", "ylanapit", hud)
     private var arNappi: HTMLElement? = null
@@ -102,31 +103,25 @@ class PeliSivu(private val juuri: HTMLElement) {
         if (ar != null) arKamera(xrRuutu) else huoneKamera()
         paivita(dt.toFloat())
         for (t in peli.tapahtumat) aanet.soita(t, kamera.paikka)
-        laskuri.textContent = "${peli.keratyt}"
+        naytaPisteet()
         nakyma.piirra()
+    }
+
+    private fun naytaPisteet() {
+        laskuri.textContent = "${peli.pisteet}"
+        // The streak badge shows what the next catch is worth
+        val k = peli.kerroin
+        putki.textContent = "×$k"
+        if (k > 1) putki.classList.add("nakyy") else putki.classList.remove("nakyy")
     }
 
     private fun paivita(dt: Float) {
         peli.paivita(dt, kamera)
 
-        for (u in peli.ukot) ukkoPiirrot.getOrPut(u) { UkkoPiirto(u).also { nakyma.scene.add(it.mesh) } }.paivita()
-        val ukkoIt = ukkoPiirrot.entries.iterator()
-        while (ukkoIt.hasNext()) {
-            val e = ukkoIt.next()
-            if (e.key !in peli.ukot) {
-                nakyma.scene.remove(e.value.mesh); e.value.vapauta(); ukkoIt.remove()
-            }
-        }
-        for (b in peli.pallot) {
-            palloPiirrot.getOrPut(b) { PalloPiirto(PALLO_A, PALLO_B).also { nakyma.scene.add(it.mesh) } }
-                .aseta(b.p, b.sade * b.koko, b.x, b.y, b.z)
-        }
-        val palloIt = palloPiirrot.entries.iterator()
-        while (palloIt.hasNext()) {
-            val e = palloIt.next()
-            if (e.key !in peli.pallot) {
-                nakyma.scene.remove(e.value.mesh); palloIt.remove()
-            }
+        piirto.paivita(peli)
+        if (peli.albumi.muutoksia != tallennettu) {
+            tallennettu = peli.albumi.muutoksia
+            Tallennus.tallenna(peli.albumi)
         }
 
         // The ball in the hand: drawn in the camera's own space, so it stays put on the screen
@@ -234,6 +229,10 @@ class PeliSivu(private val juuri: HTMLElement) {
     private fun rakennaHud() {
         laskuri.textContent = "0"
         vihje.textContent = VIHJE_HUONE
+        val albumi = el("button", "nappi", napit)
+        albumi.textContent = "Albumi"
+        albumi.addEventListener("click", { naytaAlbumi() })
+        albumi.addEventListener("beforexrselect", { e: Event -> e.preventDefault() })
         val labra = el("a", "nappi", napit)
         labra.textContent = "Ukkolabra"
         labra.setAttribute("href", "labra.html")
@@ -250,6 +249,26 @@ class PeliSivu(private val juuri: HTMLElement) {
                 }
             }
         }
+    }
+
+    /** The album: every kind of figure, with a hint in place of the ones not caught yet. */
+    private fun naytaAlbumi() {
+        val tausta = el("div", "albumi", hud)
+        tausta.addEventListener("beforexrselect", { e: Event -> e.preventDefault() })
+        val kortti = el("div", "kortti", tausta)
+        val a = peli.albumi
+        el("h2", "", kortti).textContent = "Ukkoalbumi ${a.loydetty}/${Tyyppi.entries.size}"
+        for (t in Tyyppi.entries) {
+            val rivi = el("div", if (a[t] > 0) "ukkorivi" else "ukkorivi puuttuu", kortti)
+            el("div", "kuvake ${t.name.lowercase()}", rivi)
+            val teksti = el("div", "", rivi)
+            el("b", "", teksti).textContent = if (a[t] > 0) t.nimi else "???"
+            el("div", "pieni", teksti).textContent = if (a[t] > 0) "${t.harvinaisuus.nimi} · ${t.pisteet} p" else t.vihje
+            el("div", "maara", rivi).textContent = if (a[t] > 0) "${a[t]}" else ""
+        }
+        val sulje = el("button", "nappi", kortti)
+        sulje.textContent = "Sulje"
+        sulje.addEventListener("click", { hud.removeChild(tausta) })
     }
 
     // =====================================================================================================
@@ -313,7 +332,8 @@ class PeliSivu(private val juuri: HTMLElement) {
     }
 
     private fun uusiPeli() {
-        peli = Peli((js("Date.now()") as Double % 100000.0).toInt())
+        tallennettu = 0
+        peli = Peli((js("Date.now()") as Double % 100000.0).toInt(), Tallennus.lueAlbumi())
         heittoja = 0
     }
 
@@ -455,7 +475,8 @@ class PeliSivu(private val juuri: HTMLElement) {
     // =====================================================================================================
 
     private fun kuvatila(p: URLSearchParams) {
-        peli = Peli(p.get("siemen")?.toIntOrNull() ?: 4)
+        peli = Peli(p.get("siemen")?.toIntOrNull() ?: 4, if (p.get("albumi") != null) Albumi.lue(p.get("albumi")) else Albumi())
+        p.get("tyyppi")?.let { nimi -> Tyyppi.entries.firstOrNull { it.name == nimi } }?.let { peli.tyypit = listOf(it) }
         peli.maailma.asetaPinnat(Huone.pinnat())
         suunta = p.get("suunta")?.toDoubleOrNull() ?: 0.0
         kallistus = p.get("kallistus")?.toDoubleOrNull() ?: kallistus
@@ -479,14 +500,13 @@ class PeliSivu(private val juuri: HTMLElement) {
             aika += dt
         }
         rakennaHud()
-        laskuri.textContent = "${peli.keratyt}"
+        naytaPisteet()
+        if (p.get("albumi") != null) naytaAlbumi()
         nakyma.piirra()
         window.asDynamic().kuvaValmis = true
     }
 
     companion object {
-        val PALLO_A = Vari.hex(0xFFC93C)
-        val PALLO_B = Vari.hex(0xFFF7E6)
         const val KASI_LEPO_Y = -0.72f
         const val KASI_SYVYYS = 0.5f
         const val AR_LATTIAN_SADE = 3.0

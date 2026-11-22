@@ -4,6 +4,10 @@ import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.mesh.PalloVerkko
 import fi.otsosoft.tikkujahti.mesh.UkkoVerkko
 import fi.otsosoft.tikkujahti.mesh.Verkko
+import fi.otsosoft.tikkujahti.peli.Albumi
+import fi.otsosoft.tikkujahti.peli.Pallo
+import fi.otsosoft.tikkujahti.peli.Peli
+import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import fi.otsosoft.tikkujahti.ukko.Ukko
 import fi.otsosoft.tikkujahti.ukko.Ulkonako
 import fi.otsosoft.tikkujahti.ukko.Vari
@@ -51,7 +55,10 @@ class VerkkoGeometria(private val verkko: Verkko, muuttuva: Boolean) {
 class UkkoPiirto(val ukko: Ukko) {
     private val verkko = UkkoVerkko(ukko.m)
     private val geo = VerkkoGeometria(verkko, true)
-    private val keho = materiaali(ukko.ulkonako.vari, 0.55)
+    // The golden figure gleams: smoother, and it glows a little so it stands out in any light
+    private val keho = if (ukko.ulkonako.tyyppi == Tyyppi.KULTAINEN) {
+        MeshStandardMaterial(olio { color = vari(ukko.ulkonako.vari); roughness = 0.22; metalness = 0.25; emissive = vari(ukko.ulkonako.vari); emissiveIntensity = 0.22 })
+    } else materiaali(ukko.ulkonako.vari, 0.55)
     val mesh = Mesh(
         geo.geometria,
         arrayOf(
@@ -66,10 +73,6 @@ class UkkoPiirto(val ukko: Ukko) {
     init {
         mesh.castShadow = true
         mesh.frustumCulled = false // the vertices are already in world space and move every frame
-    }
-
-    fun asetaVari(v: Vari) {
-        keho.color.setRGB(v.r.toDouble(), v.g.toDouble(), v.b.toDouble(), "srgb")
     }
 
     fun paivita() {
@@ -106,6 +109,56 @@ class PalloPiirto(a: Vari, b: Vari) {
     companion object {
         private val yhteinen by lazy { VerkkoGeometria(PalloVerkko(), false) }
         private val apu = Matrix4()
+    }
+}
+
+/** Keeps the scene's figures and balls in step with a game. */
+class PeliPiirto(private val scene: Scene) {
+    private val ukot = HashMap<Ukko, UkkoPiirto>()
+    private val pallot = HashMap<Pallo, PalloPiirto>()
+
+    fun paivita(peli: Peli) {
+        for (u in peli.ukot) ukot.getOrPut(u) { UkkoPiirto(u).also { scene.add(it.mesh) } }.paivita()
+        val ukkoIt = ukot.entries.iterator()
+        while (ukkoIt.hasNext()) {
+            val e = ukkoIt.next()
+            if (e.key !in peli.ukot) {
+                scene.remove(e.value.mesh); e.value.vapauta(); ukkoIt.remove()
+            }
+        }
+        for (b in peli.pallot) {
+            pallot.getOrPut(b) { PalloPiirto(PALLO_A, PALLO_B).also { scene.add(it.mesh) } }.aseta(b.p, b.sade * b.koko, b.x, b.y, b.z)
+        }
+        val palloIt = pallot.entries.iterator()
+        while (palloIt.hasNext()) {
+            val e = palloIt.next()
+            if (e.key !in peli.pallot) {
+                scene.remove(e.value.mesh); palloIt.remove()
+            }
+        }
+    }
+
+    companion object {
+        val PALLO_A = Vari.hex(0xFFC93C)
+        val PALLO_B = Vari.hex(0xFFF7E6)
+    }
+}
+
+/** The album saved in the browser, shared by the game and the lab. */
+object Tallennus {
+    private const val AVAIN = "tikkujahti.albumi"
+
+    fun lueAlbumi(): Albumi = try {
+        Albumi.lue(window.localStorage.getItem(AVAIN))
+    } catch (e: Throwable) {
+        Albumi() // storage can be blocked; then the album just lasts for this visit
+    }
+
+    fun tallenna(a: Albumi) {
+        try {
+            window.localStorage.setItem(AVAIN, a.teksti())
+        } catch (e: Throwable) {
+        }
     }
 }
 

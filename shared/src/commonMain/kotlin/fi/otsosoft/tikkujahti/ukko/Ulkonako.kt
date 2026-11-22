@@ -43,6 +43,30 @@ data class Luonne(
     val vilkkaus: Float = 0.5f,
 )
 
+enum class Harvinaisuus(val nimi: String) { TAVALLINEN("tavallinen"), HARVINAINEN("harvinainen"), TOSI_HARVINAINEN("tosi harvinainen") }
+
+/**
+ * The kinds of stick figure.
+ *
+ * @param vihje shown in the album until the first one is caught
+ * @param osumia hits it takes to catch one
+ * @param pisteet points for catching one
+ * @param vauhti walking and running speed multiplier
+ */
+enum class Tyyppi(
+    val nimi: String,
+    val vihje: String,
+    val harvinaisuus: Harvinaisuus,
+    val osumia: Int = 1,
+    val pisteet: Int = 1,
+    val vauhti: Float = 1f,
+) {
+    TAVALLINEN("Tikku-ukko", "Kuljeskelee joka lattialla.", Harvinaisuus.TAVALLINEN),
+    JUOKSIJA("Nopea juoksija", "Pieni vilistäjä, joka ei pysy hetkeäkään paikallaan.", Harvinaisuus.HARVINAINEN, pisteet = 3, vauhti = 1.5f),
+    ISO("Iso ukko", "Niin iso, ettei yksi pallo riitä.", Harvinaisuus.HARVINAINEN, osumia = 3, pisteet = 5, vauhti = 0.75f),
+    KULTAINEN("Kultainen tikku-ukko", "Kimaltaa ja väistää melkein kaiken.", Harvinaisuus.TOSI_HARVINAINEN, pisteet = 20, vauhti = 1.2f),
+}
+
 /** Looks and personality of one stick figure. */
 data class Ulkonako(
     val vari: Vari,
@@ -50,6 +74,7 @@ data class Ulkonako(
     val luonne: Luonne = Luonne(),
     /** Voice pitch multiplier. */
     val aani: Float = 1f,
+    val tyyppi: Tyyppi = Tyyppi.TAVALLINEN,
 ) {
     val mitat = Mitat(koko)
 
@@ -62,6 +87,7 @@ data class Ulkonako(
             Vari.hex(0xE85D75), // vadelma
             Vari.hex(0x3D8BFF), // sininen
         )
+        val KULTA = Vari.hex(0xF4BE1E)
         val SILMAVALKO = Vari.hex(0xFBFBF7)
         val TUMMA = Vari.hex(0x1D1A22)
         val SUU = Vari.hex(0x5A1E24)

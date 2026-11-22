@@ -53,12 +53,18 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
 - `peli/Heitto.kt` – `Kamera`, `Pyyhkaisy` → `Heitto` (tähtäyspiste, voima, kaarre). `peli/Pallo.kt` – fysiikka.
   `peli/Peli.kt` – ukkojen tuonti, heitto (ballistinen kaari tähtäyspisteeseen + tähtäysapu), osumat
   (pallon askel vs. raajakapselit), vangitseminen ja paluu, `tapahtumat` ääniä varten.
+- Ukkotyypit (`ukko/Ulkonako.kt`: `Tyyppi`, `Harvinaisuus`): TAVALLINEN, JUOKSIJA (pieni, juoksee aina), ISO
+  (3 osumaa: `Ukko.tolaisu` → suuttuu ja pallo kimpoaa), KULTAINEN (harvinainen, väistää). `Peli.luoUlkonako`
+  tekee tyypin mukaisen ukon, erikoisia on paikalla yksi kerrallaan. Pisteet = tyypin pisteet × `kerroin`
+  (putki peräkkäisiä kiinniottoja, huti nollaa). `peli/Albumi.kt` – kerätyt tyypeittäin, tallennus tekstinä
+  (selain: localStorage, Android: SharedPreferences).
 - `aani/Syntikka.kt` – kaikki äänet PCM:nä (22050 Hz): formanttisiansaksa `Aantely`-kohtaisesti + tehosteet.
   **Kukaan ei ole vielä kuullut näitä**: testi tarkistaa vain, että ne ovat kelvollista ääntä.
 
 `webApp/` (Kotlin/JS, ES-moduulit koska three.js on ESM-only): `Three.kt` (sidonnat vain käytetylle osalle),
-`Piirto.kt` (`UkkoPiirto`, `PalloPiirto`, `Nakyma`), `PeliSivu.kt` (huone + WebXR-AR hit-testillä ja
-dom-overlaylla), `Labra.kt`, `Aanet.kt` (Web Audio). Sivut `index.html`, `labra.html`, tyylit `tyyli.css`.
+`Piirto.kt` (`UkkoPiirto`, `PalloPiirto`, `PeliPiirto`, `Tallennus`, `Nakyma`), `PeliSivu.kt` (huone + WebXR-AR hit-testillä ja
+dom-overlaylla, albumi), `Labra.kt` (ajaa oikeaa `Peli`ä yhdellä ukolla: tyypin valinta, "Heitä pallo",
+"Väistää"), `Aanet.kt` (Web Audio). Sivut `index.html`, `labra.html`, tyylit `tyyli.css`.
 
 `androidApp/`: `MainActivity.kt` (`PeliTila`, `PeliNakyma`: `ARSceneView` + Compose-HUD), `ArMaailma.kt`
 (ARCore-tasot → `Pinta`, kamera → `Kamera`; lattia = suurin ylöspäin osoittava taso alimman lähellä),
@@ -81,7 +87,8 @@ kytkeä Pages päälle (Settings → Pages → Source: GitHub Actions) ja lisät
 ## Seuraavaksi
 1. Laitepalaute yllä olevista ja korjaukset. Äänien kuuntelu ja viritys.
 2. Issue #1:n "Ensimmäinen versio" -listan ruksit, kun omistaja on todennut kohdat laitteella.
-3. Labraan pallon heitto ukkoa kohti (väistöjen hiomiseen) ja luonteen säätimet.
+3. Issue #1:n seuraavat asiat suunnilleen tässä järjestyksessä: erikoispallot ja niiden parit (verkko, hidastus,
+   moni, hakeutuva, kultainen; `Pallo`on laji), loput ukkotyypit (ninja, kilpi, piilo, lauma), tyhjän hetken
+   touhut (istuu reunalla), kiipeily seinillä ja reunoilla roikkuminen, ketjut ja tornit.
 4. Depth API (piiloutuminen, osumat oikeisiin pintoihin), valon arvio selaimen AR:ään.
-5. Issue #1:n seuraavat asiat: ukkotyypit, kiipeily seinillä ja reunoilla, erikoispallot, albumi.
-6. Ehdota pilviympäristön asennusskriptiksi yllä oleva SDK-asennus.
+5. Ehdota pilviympäristön asennusskriptiksi yllä oleva SDK-asennus.

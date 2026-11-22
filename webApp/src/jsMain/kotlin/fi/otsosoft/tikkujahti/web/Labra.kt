@@ -4,7 +4,11 @@ import fi.otsosoft.tikkujahti.maailma.PinnanLaji
 import fi.otsosoft.tikkujahti.maailma.Pinta
 import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.matikka.clamp
-import fi.otsosoft.tikkujahti.ukko.Luonne
+import fi.otsosoft.tikkujahti.matikka.Kehys
+import fi.otsosoft.tikkujahti.peli.Heitto
+import fi.otsosoft.tikkujahti.peli.Kamera
+import fi.otsosoft.tikkujahti.peli.Peli
+import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import fi.otsosoft.tikkujahti.ukko.Toiminto
 import fi.otsosoft.tikkujahti.ukko.Ukko
 import fi.otsosoft.tikkujahti.ukko.Ulkonako
@@ -34,10 +38,16 @@ class Labra(private val juuri: HTMLElement) {
 
     private val aanet = Aanet()
     private var variIndeksi = 0
-    private var koko = 1f
+    private var tyyppi = Tyyppi.TAVALLINEN
+    private var vaistaa = true
     private var siemen = 7
     private lateinit var ukko: Ukko
-    private var piirto: UkkoPiirto? = null
+    private val koko: Float get() = ukko.m.koko
+
+    // The lab runs a real game with one figure in it, so thrown balls behave exactly as in play
+    private val peli = Peli()
+    private val piirto = PeliPiirto(nakyma.scene)
+    private val kamera = Kamera(V3(0f, 0.3f, 0.5f), Kehys.luo(-V3.Z), kotlin.math.tan(25.0 * PI / 180).toFloat(), 1f)
 
     // Orbit camera
     private var kulma = 0.45
@@ -56,6 +66,8 @@ class Labra(private val juuri: HTMLElement) {
         reuna.rotateX(-PI / 2)
         nakyma.scene.add(reuna)
 
+        peli.ukkojaKerralla = 0
+        peli.maailma.asetaPinnat(listOf(lava))
         uusiUkko()
         val p = URLSearchParams(window.location.search)
         if (p.get("kuva") != null) {
@@ -69,42 +81,50 @@ class Labra(private val juuri: HTMLElement) {
     }
 
     private fun uusiUkko() {
-        piirto?.let { nakyma.scene.remove(it.mesh); it.vapauta() }
-        val ulkonako = Ulkonako(Ulkonako.VARIT[variIndeksi], koko, Luonne(vaistotaito = 1f))
-        ukko = Ukko(1, ulkonako, V3.NOLLA, 0.3f, siemen++)
+        val omatoiminen = peli.ukot.firstOrNull()?.omatoiminen ?: false
+        peli.ukot.clear()
+        val pohja = Peli.luoUlkonako(tyyppi, Ulkonako.VARIT[variIndeksi], kotlin.random.Random(siemen))
+        val ulkonako = pohja.copy(luonne = pohja.luonne.copy(vaistotaito = if (vaistaa) 1f else 0f))
+        ukko = Ukko(siemen, ulkonako, V3.NOLLA, 0.3f, siemen++)
         ukko.lattia = lava
-        ukko.omatoiminen = false
-        piirto = UkkoPiirto(ukko).also { nakyma.scene.add(it.mesh) }
+        ukko.omatoiminen = omatoiminen
+        peli.ukot += ukko
     }
 
     private var katsoKorkeus = 0.125
 
     private fun asetaKamera() {
         val korkeus = katsoKorkeus * koko
-        val x = sin(kulma) * cos(kallistus) * etaisyys
-        val y = korkeus + sin(kallistus) * etaisyys
-        val z = cos(kulma) * cos(kallistus) * etaisyys
+        // Bigger figures are watched from further away, so every kind fills the stage alike
+        val d = etaisyys * koko
+        val x = sin(kulma) * cos(kallistus) * d
+        val y = korkeus + sin(kallistus) * d
+        val z = cos(kulma) * cos(kallistus) * d
         nakyma.kamera.position.set(x, y, z)
         nakyma.kamera.lookAt(0.0, korkeus, 0.0)
         ukko.katsoja = V3(x.toFloat(), y.toFloat(), z.toFloat())
+        kamera.paikka = V3(x.toFloat(), y.toFloat(), z.toFloat())
+        kamera.kehys = Kehys.luo(V3(0f, korkeus.toFloat(), 0f) - kamera.paikka)
+        kamera.kuvasuhde = (nakyma.leveys / nakyma.korkeus).toFloat()
     }
 
     private fun ruutu(aika: Double) {
         val dt = if (edellinen < 0) 0.016 else clamp(((aika - edellinen) / 1000.0).toFloat(), 0f, 0.05f).toDouble()
         edellinen = aika
         asetaKamera()
-        ukko.paivita((dt * hidastus).toFloat())
-        for (a in ukko.aanet) aanet.aantely(a, ukko.ulkonako.aani)
-        ukko.aanet.clear()
-        if (ukko.valmis) uusiUkko()
-        piirto?.paivita()
+        peli.paivita((dt * hidastus).toFloat(), kamera)
+        for (t in peli.tapahtumat) aanet.soita(t, kamera.paikka)
+        if (peli.ukot.isEmpty() && peli.pallot.isEmpty()) uusiUkko()
+        piirto.paivita(peli)
         tila.textContent = ukko.toiminto.name.lowercase().replace('_', ' ')
         nakyma.piirra()
     }
 
     private fun kuvatila(p: URLSearchParams) {
+        juuri.classList.add("kuva") // no panel: the stage fills the picture
+        nakyma.sovita()
         p.get("vari")?.toIntOrNull()?.let { variIndeksi = it % Ulkonako.VARIT.size; }
-        p.get("koko")?.toFloatOrNull()?.let { koko = it }
+        p.get("tyyppi")?.let { nimi -> Tyyppi.entries.firstOrNull { it.name == nimi } }?.let { tyyppi = it }
         siemen = p.get("siemen")?.toIntOrNull() ?: 7
         uusiUkko()
         kulma = (p.get("kulma")?.toDoubleOrNull() ?: 25.0) * PI / 180
@@ -120,7 +140,7 @@ class Labra(private val juuri: HTMLElement) {
         }
         val t = p.get("t")?.toFloatOrNull() ?: 1f
         repeat((t / dt).toInt()) { ukko.paivita(dt) }
-        piirto?.paivita()
+        piirto.paivita(peli)
         nakyma.piirra()
         window.asDynamic().kuvaValmis = true
     }
@@ -136,6 +156,9 @@ class Labra(private val juuri: HTMLElement) {
             nappi(toiminnot, NIMET[t] ?: t.name) { ukko.komenna(t) }
         }
         nappi(toiminnot, "Uusi ukko") { uusiUkko() }
+        val heita = el("button", "paa", toiminnot)
+        heita.textContent = "Heitä pallo"
+        heita.addEventListener("click", { heitaPallo() })
 
         val rivi = el("div", "rivi", paneeli)
         for ((i, v) in Ulkonako.VARIT.withIndex()) {
@@ -144,12 +167,12 @@ class Labra(private val juuri: HTMLElement) {
             n.setAttribute("aria-label", "Väri ${i + 1}")
             n.addEventListener("click", {
                 variIndeksi = i
-                piirto?.asetaVari(v)
+                if (tyyppi == Tyyppi.KULTAINEN) tyyppi = Tyyppi.TAVALLINEN
+                uusiUkko()
             })
         }
-        for ((nimi, k) in listOf("Pieni" to 0.7f, "Tavallinen" to 1f, "Iso" to 1.5f)) {
-            nappi(rivi, nimi) { koko = k; uusiUkko() }
-        }
+        val tyypit = el("div", "rivi", paneeli)
+        for (t in Tyyppi.entries) nappi(tyypit, t.nimi) { tyyppi = t; uusiUkko() }
 
         val saadot = el("div", "rivi", paneeli)
         val omat = el("label", "", saadot)
@@ -158,12 +181,34 @@ class Labra(private val juuri: HTMLElement) {
         ruksi.addEventListener("change", { ukko.omatoiminen = ruksi.checked; if (ruksi.checked) ukko.komenna(Toiminto.SEISOO) })
         omat.appendChild(ruksi)
         omat.appendChild(document.createTextNode(" Touhuaa itse"))
+        val vaisto = el("label", "", saadot)
+        val vaistoRuksi = document.createElement("input") as HTMLInputElement
+        vaistoRuksi.type = "checkbox"
+        vaistoRuksi.checked = true
+        vaistoRuksi.addEventListener("change", { vaistaa = vaistoRuksi.checked; uusiUkko() })
+        vaisto.appendChild(vaistoRuksi)
+        vaisto.appendChild(document.createTextNode(" Väistää"))
         val hid = el("label", "", saadot)
         hid.appendChild(document.createTextNode("Nopeus "))
         val liuku = document.createElement("input") as HTMLInputElement
         liuku.type = "range"; liuku.min = "0.05"; liuku.max = "1"; liuku.step = "0.05"; liuku.value = "1"
         liuku.addEventListener("input", { hidastus = liuku.value.toDouble() })
         hid.appendChild(liuku)
+    }
+
+    /** Throws a ball from the camera straight at the figure, as a player would. */
+    private fun heitaPallo() {
+        if (ukko.kiinni) return
+        val kohti = (ukko.keskipiste - kamera.paikka).suunta()
+        val e = kohti dot kamera.kehys.eteen
+        peli.heita(
+            Heitto(
+                (kohti dot kamera.kehys.oikealle) / e / (kamera.tanPuoliFov * kamera.kuvasuhde),
+                (kohti dot kamera.kehys.ylos) / e / kamera.tanPuoliFov, 0.5f, 0f,
+            ),
+            kamera,
+        )
+        peli.tapahtumat.lastOrNull()?.let { aanet.soita(it, kamera.paikka) }
     }
 
     private fun nappi(isanta: HTMLElement, teksti: String, toiminto: () -> Unit) {

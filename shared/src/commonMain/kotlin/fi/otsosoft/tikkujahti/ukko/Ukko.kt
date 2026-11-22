@@ -49,6 +49,10 @@ class Ukko(
 ) {
     val m = ulkonako.mitat
     private val luonne = ulkonako.luonne
+    private val tyyppi = ulkonako.tyyppi
+    /** Hits still needed to catch this figure. */
+    var osumiaJaljella = ulkonako.tyyppi.osumia
+        private set
     private val rnd = Random(siemen)
     val asento = Asento()
 
@@ -213,6 +217,23 @@ class Ukko(
         aloita(t)
     }
 
+    /**
+     * A ball hit a figure that takes more hits than this to catch: it staggers and gets cross, and the ball
+     * bounces off.
+     */
+    fun tolaisu(pallonNopeus: V3) {
+        if (kiinni || valmis) return
+        osumiaJaljella--
+        if (!ilmassa) nopeus += pallonNopeus.vaakaan().suunta(V3.NOLLA) * 0.35f
+        noja.tyonna(pallonNopeus.vaakaan().suunta(V3.NOLLA) * 3f)
+        venytys.tyonna(-2.5f)
+        kyykky.tyonna(4f)
+        // It was hit, not narrowly missed: no startled jump on top of this
+        odottavaVaisto = null
+        seuraavaLahelta = -1f
+        aloita(Toiminto.SUUTTUU)
+    }
+
     /** A ball hit the figure at [kohta] moving at [pallonNopeus]: it gets knocked, then curls into the ball. */
     fun osuma(kohta: V3, pallonNopeus: V3) {
         if (kiinni || valmis) return
@@ -314,7 +335,7 @@ class Ukko(
         toisto = 0
         toimintoKesto = when (t) {
             Toiminto.SAAPUU -> 1.6f
-            Toiminto.SEISOO -> 1.5f + rnd.nextFloat() * 2.5f
+            Toiminto.SEISOO -> if (tyyppi == Tyyppi.JUOKSIJA) 0.3f + rnd.nextFloat() * 0.6f else 1.5f + rnd.nextFloat() * 2.5f
             Toiminto.KAVELEE, Toiminto.JUOKSEE -> 8f
             Toiminto.KATSELEE -> 2.8f
             Toiminto.VILKUTTAA -> 2.2f
@@ -374,8 +395,12 @@ class Ukko(
         val katsojaLahella = katsoja?.let { (it.vaakaan() - juuri.vaakaan()).pituus < 2.2f } ?: false
         val r = rnd.nextFloat()
         when {
+            tyyppi == Tyyppi.JUOKSIJA && r < 0.85f -> {
+                kohde = uusiKohde(0.9f)
+                aloita(Toiminto.JUOKSEE)
+            }
             r < 0.42f -> {
-                kohde = uusiKohde(0.35f)
+                kohde = uusiKohde(0.35f * m.koko)
                 aloita(if (rnd.nextFloat() < 0.15f + luonne.vilkkaus * 0.2f) Toiminto.JUOKSEE else Toiminto.KAVELEE)
             }
             r < 0.55f && katsojaLahella -> aloita(Toiminto.VILKUTTAA)
@@ -453,7 +478,7 @@ class Ukko(
             Toiminto.KAVELEE, Toiminto.JUOKSEE -> {
                 val juoksee = toiminto == Toiminto.JUOKSEE
                 o.kohde = kohde
-                o.vauhti = (if (juoksee) 0.55f else 0.22f) * (0.8f + luonne.vilkkaus * 0.4f)
+                o.vauhti = (if (juoksee) 0.55f else 0.22f) * (0.8f + luonne.vilkkaus * 0.4f) * tyyppi.vauhti
                 o.tunne = if (juoksee) Tunne.ILOINEN else Tunne.NEUTRAALI
                 if (katseKohde != null) o.katse = juuri + f * 1f + ylos * 0.05f
                 val k = kohde

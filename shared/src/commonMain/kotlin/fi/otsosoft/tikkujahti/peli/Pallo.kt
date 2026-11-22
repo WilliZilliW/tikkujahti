@@ -24,6 +24,8 @@ class Pallo(val id: Int, var p: V3, var v: V3, val sade: Float) {
     var ika = 0f
     var tilaAika = 0f
     var pomppuja = 0
+    /** Touched a figure, even if it did not catch it: such a throw is not a miss. */
+    var osui = false
     /** The figure this ball caught. */
     var ukko: Ukko? = null
     /** Drawn size, 0…1 and a little over: balls pop when they catch and shrink when they fade. */

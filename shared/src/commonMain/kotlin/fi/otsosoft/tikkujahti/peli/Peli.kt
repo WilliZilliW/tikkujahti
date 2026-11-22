@@ -10,7 +10,9 @@ import fi.otsosoft.tikkujahti.matikka.suuntakulma
 import fi.otsosoft.tikkujahti.ukko.Aantely
 import fi.otsosoft.tikkujahti.ukko.Luonne
 import fi.otsosoft.tikkujahti.ukko.Nivel
+import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import fi.otsosoft.tikkujahti.ukko.Ukko
+import fi.otsosoft.tikkujahti.ukko.Vari
 import fi.otsosoft.tikkujahti.ukko.Ulkonako
 import kotlin.math.cos
 import kotlin.math.sin
@@ -30,7 +32,7 @@ class Tapahtuma(val laji: Aani, val paikka: V3, val voima: Float = 1f, val aante
  * The game: stick figures wander on the floor of [maailma], the player throws balls at them, and a hit
  * figure curls into the ball, which flies back to the player.
  */
-class Peli(siemen: Int = 1) {
+class Peli(siemen: Int = 1, val albumi: Albumi = Albumi()) {
     val maailma = Maailma()
     val ukot = ArrayList<Ukko>()
     val pallot = ArrayList<Pallo>()
@@ -40,6 +42,14 @@ class Peli(siemen: Int = 1) {
         private set
     var heitot = 0
         private set
+    var pisteet = 0
+        private set
+    /** Catches in a row without a miss. The next catch scores times [kerroin]. */
+    var putki = 0
+        private set
+    val kerroin: Int get() = (putki + 1).coerceAtMost(SUURIN_KERROIN)
+    /** Which kinds of figure may arrive; the lab narrows this to one. */
+    var tyypit: List<Tyyppi> = Tyyppi.entries
     /** How many figures are out at once. */
     var ukkojaKerralla = 2
 
@@ -93,6 +103,11 @@ class Peli(siemen: Int = 1) {
                         if (matka < vauhti * dt + 0.06f) {
                             pallo.vaihda(PallonTila.POIS)
                             keratyt++
+                            pallo.ukko?.let { u ->
+                                pisteet += u.ulkonako.tyyppi.pisteet * kerroin
+                                putki++
+                                albumi.lisaa(u.ulkonako.tyyppi)
+                            }
                             tapahtumat += Tapahtuma(Aani.KERAYS, pallo.p)
                         } else {
                             pallo.p += ero * (vauhti * dt / matka)
@@ -139,9 +154,20 @@ class Peli(siemen: Int = 1) {
                     if (u.kiinni || !u.asento.nakyvissa) continue
                     val kohta = osuuko(ed, pallo.p, pallo.sade, u) ?: continue
                     pallo.p = kohta
+                    if (u.osumiaJaljella > 1) {
+                        // Not caught yet: the ball bounces off and is spent
+                        u.tolaisu(pallo.v)
+                        val n = (kohta - u.keskipiste).suunta(-pallo.v.suunta())
+                        pallo.v = (pallo.v - n * (2f * (pallo.v dot n))) * 0.45f
+                        pallo.pomppuja = 2
+                        pallo.osui = true
+                        tapahtumat += Tapahtuma(Aani.POMPPU, kohta, 0.9f)
+                        return
+                    }
                     u.pallonKeskus = kohta
                     u.osuma(kohta, pallo.v)
                     pallo.ukko = u
+                    pallo.osui = true
                     pallo.v = V3.NOLLA
                     pallo.vaihda(PallonTila.VANGITSEE)
                     tapahtumat += Tapahtuma(Aani.OSUMA, kohta)
@@ -151,7 +177,10 @@ class Peli(siemen: Int = 1) {
         }
         val lattiaY = maailma.lattia?.keskus?.y ?: (pallo.p.y - 10f)
         val levossa = pallo.v.pituus < 0.12f && pallo.ika > 0.5f
-        if (levossa || pallo.ika > 6f || pallo.p.y < lattiaY - 3f) pallo.vaihda(PallonTila.HAIPUU)
+        if (levossa || pallo.ika > 6f || pallo.p.y < lattiaY - 3f) {
+            pallo.vaihda(PallonTila.HAIPUU)
+            if (!pallo.osui) putki = 0 // a miss ends the streak
+        }
     }
 
     /** Where along the ball's step from [a] to [b] it touches the figure, or null. */
@@ -238,17 +267,18 @@ class Peli(siemen: Int = 1) {
         var vari = rnd.nextInt(Ulkonako.VARIT.size)
         if (vari == edellinenVari) vari = (vari + 1) % Ulkonako.VARIT.size
         edellinenVari = vari
-        val ulkonako = Ulkonako(
-            vari = Ulkonako.VARIT[vari],
-            koko = 0.85f + rnd.nextFloat() * 0.4f,
-            luonne = Luonne(
-                ujous = rnd.nextFloat(),
-                leikkisyys = rnd.nextFloat(),
-                vaistotaito = 0.15f + rnd.nextFloat() * 0.5f,
-                vilkkaus = rnd.nextFloat(),
-            ),
-            aani = 0.8f + rnd.nextFloat() * 0.5f,
-        )
+        // One special figure at a time, so that a rare one is an event
+        val erikoinenPaikalla = ukot.any { it.ulkonako.tyyppi != Tyyppi.TAVALLINEN }
+        val arpa = rnd.nextFloat()
+        var tyyppi = when {
+            erikoinenPaikalla -> Tyyppi.TAVALLINEN
+            arpa < 0.04f -> Tyyppi.KULTAINEN
+            arpa < 0.17f -> Tyyppi.ISO
+            arpa < 0.34f -> Tyyppi.JUOKSIJA
+            else -> Tyyppi.TAVALLINEN
+        }
+        if (tyyppi !in tyypit) tyyppi = tyypit.firstOrNull() ?: Tyyppi.TAVALLINEN
+        val ulkonako = luoUlkonako(tyyppi, Ulkonako.VARIT[vari], rnd)
         val u = Ukko(seuraavaId++, ulkonako, p, suuntakulma((kamera.paikka - p).vaakaan()), rnd.nextInt())
         u.lattia = lattia
         u.katsoja = kamera.paikka
@@ -256,6 +286,25 @@ class Peli(siemen: Int = 1) {
     }
 
     companion object {
+        const val SUURIN_KERROIN = 5
+
+        /** A figure of the given kind with a random personality. */
+        fun luoUlkonako(tyyppi: Tyyppi, vari: Vari, rnd: Random): Ulkonako {
+            val luonne = Luonne(
+                ujous = rnd.nextFloat(),
+                leikkisyys = rnd.nextFloat(),
+                vaistotaito = 0.15f + rnd.nextFloat() * 0.5f,
+                vilkkaus = rnd.nextFloat(),
+            )
+            val aani = 0.8f + rnd.nextFloat() * 0.5f
+            return when (tyyppi) {
+                Tyyppi.TAVALLINEN -> Ulkonako(vari, 0.85f + rnd.nextFloat() * 0.4f, luonne, aani)
+                Tyyppi.JUOKSIJA -> Ulkonako(vari, 0.72f, luonne.copy(vilkkaus = 1f, vaistotaito = 0.3f), 1.35f, tyyppi)
+                Tyyppi.ISO -> Ulkonako(vari, 1.75f, luonne.copy(vilkkaus = 0.1f, vaistotaito = 0.05f, ujous = 0.1f), 0.62f, tyyppi)
+                Tyyppi.KULTAINEN -> Ulkonako(Ulkonako.KULTA, 0.95f, luonne.copy(vaistotaito = 0.85f, ujous = 0.9f, leikkisyys = 0.9f), 1.15f, tyyppi)
+            }
+        }
+
         /** Hit shapes are this much fatter than the drawn limbs: near misses on a thin leg would feel unfair. */
         const val OSUMA_APU = 1.6f
         /** Aim assist cone, radians. */

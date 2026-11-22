@@ -5,6 +5,7 @@ import fi.otsosoft.tikkujahti.maailma.Pinta
 import fi.otsosoft.tikkujahti.matikka.Kehys
 import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.peli.Aani
+import fi.otsosoft.tikkujahti.peli.Albumi
 import fi.otsosoft.tikkujahti.peli.Heitto
 import fi.otsosoft.tikkujahti.peli.Kamera
 import fi.otsosoft.tikkujahti.peli.Pallo
@@ -14,6 +15,7 @@ import fi.otsosoft.tikkujahti.peli.Pyyhkaisy
 import fi.otsosoft.tikkujahti.ukko.Luonne
 import fi.otsosoft.tikkujahti.ukko.Nivel
 import fi.otsosoft.tikkujahti.ukko.Toiminto
+import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import fi.otsosoft.tikkujahti.ukko.Ukko
 import fi.otsosoft.tikkujahti.ukko.Ulkonako
 import kotlin.test.Test
@@ -162,6 +164,64 @@ class PeliTest {
         assertTrue(Aani.KERAYS in nahty, "palloa ei kerätty")
         assertEquals(1, peli.keratyt)
         assertTrue(peli.ukot.isEmpty() && peli.pallot.isEmpty())
+    }
+
+    private fun heitaKohti(peli: Peli, u: Ukko) {
+        val kohti = (u.keskipiste - kamera.paikka).suunta()
+        val e = kohti dot kamera.kehys.eteen
+        peli.heita(Heitto((kohti dot kamera.kehys.oikealle) / e / (kamera.tanPuoliFov * kamera.kuvasuhde), (kohti dot kamera.kehys.ylos) / e / kamera.tanPuoliFov, 0.6f, 0f), kamera)
+    }
+
+    @Test
+    fun isoUkkoVaatiiKolmeOsumaaJaPutkiKasvattaaPisteita() {
+        val peli = Peli()
+        peli.maailma.asetaPinnat(listOf(lattia))
+        peli.ukkojaKerralla = 0
+        val iso = Ukko(1, Peli.luoUlkonako(Tyyppi.ISO, Ulkonako.VARIT[2], kotlin.random.Random(1)).let { it.copy(luonne = it.luonne.copy(vaistotaito = 0f)) }, V3(0f, 0f, -0.3f), 0f, 3)
+        iso.omatoiminen = false
+        peli.ukot += iso
+        repeat(150) { peli.paivita(dt, kamera) }
+        for (heitto in 1..3) {
+            assertEquals(4 - heitto, iso.osumiaJaljella)
+            heitaKohti(peli, iso)
+            var suuttui = false
+            repeat(60 * 5) {
+                peli.paivita(dt, kamera)
+                if (iso.toiminto == Toiminto.SUUTTUU) suuttui = true
+                assertTrue(iso.toiminto != Toiminto.SAIKAHTAA, "osuman saanut ukko ei säikähdä ohi mennyttä palloa")
+            }
+            if (heitto < 3) {
+                assertTrue(suuttui, "iso ukko ei suuttunut osumasta $heitto")
+                assertEquals(0, peli.keratyt, "iso ukko jäi kiinni jo osumalla $heitto")
+                assertTrue(!iso.kiinni && iso.asento[Nivel.PAA].y > iso.m.pituus * 0.5f, "iso ukko ei pysynyt pystyssä")
+            }
+        }
+        assertEquals(1, peli.keratyt)
+        assertEquals(Tyyppi.ISO.pisteet, peli.pisteet)
+        assertEquals(1, peli.putki)
+        assertEquals(1, peli.albumi[Tyyppi.ISO])
+
+        // The next catch in a row scores double; a miss ends the streak
+        val u = ukko(0f)
+        peli.ukot += u
+        peli.paivita(dt, kamera)
+        heitaKohti(peli, u)
+        repeat(60 * 6) { peli.paivita(dt, kamera) }
+        assertEquals(Tyyppi.ISO.pisteet + 2, peli.pisteet)
+        peli.heita(Heitto(0.9f, 0.5f, 0.5f, 0f), kamera)
+        repeat(60 * 8) { peli.paivita(dt, kamera) }
+        assertEquals(0, peli.putki)
+    }
+
+    @Test
+    fun albumiSailyyTallennuksessa() {
+        val a = Albumi()
+        a.lisaa(Tyyppi.ISO); a.lisaa(Tyyppi.TAVALLINEN); a.lisaa(Tyyppi.TAVALLINEN)
+        val b = Albumi.lue(a.teksti())
+        assertEquals(2, b[Tyyppi.TAVALLINEN]); assertEquals(1, b[Tyyppi.ISO]); assertEquals(0, b[Tyyppi.KULTAINEN])
+        assertEquals(2, b.loydetty)
+        assertEquals(0, Albumi.lue("roskaa;X=2;ISO=abc").yhteensa)
+        assertEquals(0, Albumi.lue(null).yhteensa)
     }
 
     @Test

@@ -15,6 +15,7 @@ import fi.otsosoft.tikkujahti.mesh.UkkoVerkko
 import fi.otsosoft.tikkujahti.mesh.Verkko
 import fi.otsosoft.tikkujahti.peli.Pallo
 import fi.otsosoft.tikkujahti.peli.Peli
+import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import fi.otsosoft.tikkujahti.ukko.Ukko
 import fi.otsosoft.tikkujahti.ukko.Ulkonako
 import fi.otsosoft.tikkujahti.ukko.Vari
@@ -135,7 +136,8 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
     private fun luoUkko(u: Ukko): UkkoKuva {
         val verkko = UkkoVerkko(u.m)
         val puskurit = VerkkoPuskurit(engine, verkko, true)
-        val keho = aine(u.ulkonako.vari, 0.55f)
+        // The golden figure gleams
+        val keho = if (u.ulkonako.tyyppi == Tyyppi.KULTAINEN) materiaalit.createColorInstance(u.ulkonako.vari.compose(), 0.35f, 0.22f, 0.6f) else aine(u.ulkonako.vari, 0.55f)
         val aineet = arrayOf(keho, valkoinen, tumma, suu, kieli)
         val e = EntityManager.get().create()
         val b = RenderableManager.Builder(verkko.osia).boundingBox(laatikko).culling(false).castShadows(true).receiveShadows(false)

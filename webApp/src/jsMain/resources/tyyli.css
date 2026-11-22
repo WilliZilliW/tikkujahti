@@ -66,3 +66,40 @@ body[data-sivu="labra"] .paneeli { height: 46%; }
 }
 .vihje.piilo { opacity: 0; }
 body.ar-tila { background: transparent; }
+
+.putki {
+  position: absolute; left: calc(12px + env(safe-area-inset-left)); top: calc(58px + env(safe-area-inset-top));
+  padding: 3px 12px; border-radius: 999px; font-weight: 700; pointer-events: none;
+  background: #e85d75; color: #fff; opacity: 0; transform: scale(.6); transition: opacity .2s, transform .2s;
+}
+.putki.nakyy { opacity: 1; transform: scale(1); }
+.paa { background: #2a2630; color: #fff; font-weight: 600; }
+
+/* Album */
+.albumi {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(42, 38, 48, .45);
+}
+.kortti {
+  width: 100%; max-width: 380px; max-height: 100%; overflow-y: auto; padding: 16px; border-radius: 20px;
+  background: #fffcf5; display: flex; flex-direction: column; gap: 10px;
+}
+.kortti h2 { margin: 0 0 2px; font-size: 20px; }
+.kortti .nappi { align-self: center; background: #2a2630; color: #fff; }
+.ukkorivi { display: flex; align-items: center; gap: 12px; }
+.ukkorivi .pieni { font-size: 13px; opacity: .7; }
+.ukkorivi .maara { margin-left: auto; font-size: 20px; font-weight: 700; }
+/* A little stick figure drawn with gradients: a head on a body */
+.kuvake {
+  flex: none; width: 40px; height: 48px; --v: #f08a24;
+  background:
+    radial-gradient(circle at 50% 12px, var(--v) 0 11px, transparent 12px),
+    linear-gradient(var(--v), var(--v)) 50% 20px / 5px 16px no-repeat,
+    linear-gradient(115deg, transparent 46%, var(--v) 46% 54%, transparent 54%) 62% 100% / 14px 16px no-repeat,
+    linear-gradient(65deg, transparent 46%, var(--v) 46% 54%, transparent 54%) 38% 100% / 14px 16px no-repeat;
+}
+.kuvake.juoksija { --v: #2bb3a3; transform: scale(.8) skewX(-8deg); }
+.kuvake.iso { --v: #8e6be8; transform: scale(1.15); }
+.kuvake.kultainen { --v: #f4be1e; filter: drop-shadow(0 0 4px #ffe27a); }
+.puuttuu .kuvake { --v: #2a2630; opacity: .35; filter: none; }
+body.kuva .nakyma { bottom: 0 !important; left: 0 !important; }
