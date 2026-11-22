@@ -29,7 +29,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
-enum class Aani { HEITTO, POMPPU, OSUMA, KERAYS, AANTELY, TORJUNTA, TUTKA, HIDASTUS, LIIMA, POIMINTA, KIMALLUS, PYRISTELY, KARKASI }
+enum class Aani { HEITTO, POMPPU, OSUMA, KERAYS, AANTELY, TORJUNTA, TUTKA, HIDASTUS, LIIMA, POIMINTA, KIMALLUS, PYRISTELY, KARKASI, TASO }
 
 /**
  * Something that happened this frame, for sounds and effects.
@@ -37,6 +37,7 @@ enum class Aani { HEITTO, POMPPU, OSUMA, KERAYS, AANTELY, TORJUNTA, TUTKA, HIDAS
  * @param voima 0…1 loudness (bounces)
  * @param aantely the voice sound when [laji] is [Aani.AANTELY], with the figure's own voice pitch in [korkeus]
  * @param teksti a short note to show the player, e.g. what they just found
+ * @param nuoli whether a sound from out of view may be pointed at with an arrow (harder levels give fewer hints)
  */
 class Tapahtuma(
     val laji: Aani,
@@ -45,6 +46,7 @@ class Tapahtuma(
     val aantely: Aantely? = null,
     val korkeus: Float = 1f,
     val teksti: String? = null,
+    val nuoli: Boolean = true,
 )
 
 /** A special ball lying somewhere in the room, glittering. Hit it with a ball to pick it up. */
@@ -100,6 +102,14 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
      * front of the player and stay in view (the browser's room, where the player cannot walk).
      */
     var etsinta = false
+    /**
+     * Whether the game is played in levels ([Taso]): each is finished by catching enough figures, and each
+     * hides them better than the last. The level reached is kept in [albumi]. Off, every kind of figure may
+     * turn up and nothing gets harder (the lab, the tests).
+     */
+    var tasot = false
+    var taso = Taso(albumi.taso)
+        private set
     /** Whether to tell the player when a new kind of surface or spot is recognised (AR, where the room is unknown). */
     var ilmoitaLoydot = false
     private var paikkaAjastin = 0f
@@ -132,7 +142,9 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
 
         // New figures arrive one at a time
         val paikalla = ukot.filter { !it.kiinni }.map { if (it.ryhma != 0) -it.ryhma else it.id }.distinct().size
-        if (lattia != null && paikalla < ukkojaKerralla) {
+        if (taso.numero != albumi.taso) taso = Taso(albumi.taso)
+        val enintaan = if (tasot && etsinta) taso.ukkoja else ukkojaKerralla
+        if (lattia != null && paikalla < enintaan) {
             ukkoAjastin -= dt
             if (ukkoAjastin <= 0f) {
                 ukkoAjastin = 1.5f + rnd.nextFloat() * 2.5f
@@ -214,11 +226,11 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
             }
             u.pallo = lahin?.p
             // Special figures do not hang about for ever: miss your chance and they slip away
-            if (u.ulkonako.tyyppi == Tyyppi.NINJA && tyypit.size > 1 && u.ika > VIERAILU && !u.kiinni && !u.ilmassa && lahin == null) {
+            if (u.ulkonako.tyyppi == Tyyppi.NINJA && tyypit.size > 1 && u.ika > (if (tasot) taso.vierailu else VIERAILU) && !u.kiinni && !u.ilmassa && lahin == null) {
                 // A ninja does not walk away: a puff of smoke, and it is gone
                 savu(u.keskipiste, u.m.pituus)
                 u.katoa()
-            } else if (u.ulkonako.tyyppi != Tyyppi.TAVALLINEN && tyypit.size > 1 && u.ika > VIERAILU && !u.kiinni && !u.ilmassa && lahin == null) {
+            } else if (u.ulkonako.tyyppi != Tyyppi.TAVALLINEN && tyypit.size > 1 && u.ika > (if (tasot) taso.vierailu else VIERAILU) && !u.kiinni && !u.ilmassa && lahin == null) {
                 val pois = (u.juuri - kamera.paikka).vaakaan().suunta(V3.Z)
                 u.pakene(u.juuri + (if (u.seinalla) V3.Y * 0.6f else pois * 1.2f))
             }
@@ -226,7 +238,9 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
             istuta(u, dt)
             piilota(u, dt)
             u.paivita(dt)
-            for (a in u.aanet) tapahtumat += Tapahtuma(Aani.AANTELY, u.keskipiste, aantely = a, korkeus = u.ulkonako.aani)
+            for (a in u.aanet) {
+                tapahtumat += Tapahtuma(Aani.AANTELY, u.keskipiste, aantely = a, korkeus = u.ulkonako.aani, nuoli = !tasot || rnd.nextFloat() < taso.nuolia)
+            }
             u.aanet.clear()
         }
         if (lattia != null) ohjaaLaumoja(dt, kamera, lattia)
@@ -443,6 +457,14 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         pisteet += u.ulkonako.tyyppi.pisteet * kerroin
         putki++
         albumi.lisaa(u.ulkonako.tyyppi)
+        if (tasot && albumi.etene(taso.tavoite)) {
+            taso = Taso(albumi.taso)
+            val uudet = taso.uudet.joinToString(" ja ") { it.nimi.lowercase() }
+            tapahtumat += Tapahtuma(
+                Aani.TASO, pallo.p,
+                teksti = "Taso ${taso.numero}! Ukot piiloutuvat nyt paremmin." + if (uudet.isNotEmpty()) " Uutena mukana: $uudet." else "",
+            )
+        }
         // Some figures were carrying a special ball
         if (aarteita && rnd.nextFloat() < 0.12f) {
             val l = PalloLaji.entries[1 + rnd.nextInt(PalloLaji.entries.size - 1)]
@@ -671,7 +693,7 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
             if (a.kilahdus <= 0f && a.kilahdus > -100f) {
                 // The glitter tinkles; the platform makes it louder the closer the player is
                 a.kilahdus = 2.6f
-                tapahtumat += Tapahtuma(Aani.KIMALLUS, a.paikka, 0.6f)
+                tapahtumat += Tapahtuma(Aani.KIMALLUS, a.paikka, 0.6f, nuoli = !tasot || rnd.nextFloat() < taso.nuolia)
             }
         }
         aarteet.removeAll { it.ika > AARTEEN_IKA }
@@ -750,16 +772,18 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         val nakokentta = atan(kamera.tanPuoliFov * kamera.kuvasuhde)
         fun kelpaa(p: V3): Boolean {
             val ero = (p - kamera.paikka).vaakaan()
-            return ero.pituus in 1.2f..4f && ukot.none { (it.juuri - p).vaakaan().pituus < 0.5f } && esteeton(kamera.paikka, p + V3.Y * 0.15f)
+            return ero.pituus in 1.2f..(if (tasot) taso.etaisyys else 4f) && ukot.none { (it.juuri - p).vaakaan().pituus < 0.5f } && esteeton(kamera.paikka, p + V3.Y * 0.15f)
         }
         val paikat = maailma.paikat.filter { it.lattialla && kelpaa(it.piste) }
-        if (paikat.isNotEmpty() && rnd.nextFloat() < 0.5f) return lattia.lahinPiste(paikat.random(rnd).piste, 0.06f)
-        val piiloon = rnd.nextFloat() < 0.7f
+        if (paikat.isNotEmpty() && rnd.nextFloat() < (if (tasot) taso.paikoissa else 0.5f)) return lattia.lahinPiste(paikat.random(rnd).piste, 0.06f)
+        val piiloon = rnd.nextFloat() < (if (tasot) taso.piilossa else 0.7f)
+        val kauimmas = (if (tasot) taso.etaisyys else 4f) - 0.5f
         for (yritys in 0 until 24) {
             val suunta = kierra(eteen, V3.Y, (rnd.nextFloat() - 0.5f) * 2f * PI.toFloat())
-            // Mostly where the player is not looking just now
-            if (piiloon && yritys < 16 && kulmaValilla(suunta, eteen) < nakokentta * 1.3f) continue
-            val p = lattia.lahinPiste(V3(kamera.paikka.x, lattia.keskus.y, kamera.paikka.z) + suunta * (1.5f + rnd.nextFloat() * 2f), 0.12f)
+            // Mostly out of view on the hard levels, in plain view on the easy ones
+            val nakyvissa = kulmaValilla(suunta, eteen) < nakokentta * (if (piiloon) 1.3f else 0.8f)
+            if (yritys < 16 && nakyvissa == piiloon) continue
+            val p = lattia.lahinPiste(V3(kamera.paikka.x, lattia.keskus.y, kamera.paikka.z) + suunta * (1.5f + rnd.nextFloat() * (kauimmas - 1.5f).coerceAtLeast(0.3f)), 0.12f)
             if (kelpaa(p)) return p
         }
         return null
@@ -783,11 +807,12 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
 
     private fun arvoTyyppi(): Tyyppi {
         if (tyypit.size == 1) return tyypit[0]
+        val sallitut = if (tasot) tyypit.filter { it in taso.tyypit } else tyypit
         // One special figure at a time, so that a rare one is an event
-        if (ukot.any { it.ulkonako.tyyppi != Tyyppi.TAVALLINEN } || rnd.nextFloat() > 0.45f || Tyyppi.TAVALLINEN !in tyypit) {
-            if (Tyyppi.TAVALLINEN in tyypit) return Tyyppi.TAVALLINEN
+        if (ukot.any { it.ulkonako.tyyppi != Tyyppi.TAVALLINEN } || rnd.nextFloat() > (if (tasot) taso.erikoisia else 0.45f) || Tyyppi.TAVALLINEN !in sallitut) {
+            if (Tyyppi.TAVALLINEN in sallitut) return Tyyppi.TAVALLINEN
         }
-        val ehdokkaat = tyypit.filter { it != Tyyppi.TAVALLINEN }
+        val ehdokkaat = sallitut.filter { it != Tyyppi.TAVALLINEN }
         if (ehdokkaat.isEmpty()) return Tyyppi.TAVALLINEN
         // A figure the player holds the right ball for turns up more readily
         val painot = ehdokkaat.map { t -> (YLEISYYS[t] ?: 1f) * (if (sopivaPallo(t)?.let { reppu[it] > 0 && !reppu.rajaton } == true) 3f else 1f) }
@@ -806,7 +831,10 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         edellinenVari = vari
         val tyyppi = arvoTyyppi()
         fun luo(paikka: V3, pinta: Pinta = lattia, korkeus: Float? = null): Ukko {
-            val u = Ukko(seuraavaId++, luoUlkonako(tyyppi, Ulkonako.VARIT[vari], rnd), paikka, suuntakulma((kamera.paikka - paikka).vaakaan()), rnd.nextInt(), alkuKorkeus = korkeus, pinta = pinta)
+            var ulkonako = luoUlkonako(tyyppi, Ulkonako.VARIT[vari], rnd)
+            // Higher up, every figure is a little quicker to dodge
+            if (tasot) ulkonako = ulkonako.copy(luonne = ulkonako.luonne.copy(vaistotaito = (ulkonako.luonne.vaistotaito + taso.vaistolisa).coerceAtMost(1f)))
+            val u = Ukko(seuraavaId++, ulkonako, paikka, suuntakulma((kamera.paikka - paikka).vaakaan()), rnd.nextInt(), alkuKorkeus = korkeus, pinta = pinta)
             u.maanTaso = lattia.keskus.y
             u.katsoja = kamera.paikka
             // To be looked for, a figure has to stay somewhere (the wall climbers have their own routes)

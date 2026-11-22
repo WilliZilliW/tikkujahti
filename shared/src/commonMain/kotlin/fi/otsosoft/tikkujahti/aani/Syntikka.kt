@@ -253,6 +253,24 @@ object Syntikka {
         }, 0.5f)
     }
 
+    /** A level finished: a little fanfare of five rising notes. */
+    fun taso(): FloatArray {
+        val nuotit = floatArrayOf(523f, 659f, 784f, 1047f, 1319f)
+        val vali = 0.1f
+        val n = ((vali * nuotit.size + 0.6f) * TAAJUUS).toInt()
+        val ulos = FloatArray(n)
+        for ((k, f) in nuotit.withIndex()) {
+            val alku = (k * vali * TAAJUUS).toInt()
+            for (i in alku until n) {
+                val t = (i - alku) / TAAJUUS.toFloat()
+                val w = 2f * PI.toFloat() * f * t
+                ulos[i] += (sin(w) + 0.3f * sin(2f * w) + 0.15f * sin(3f * w)) * exp(-t * (if (k == nuotit.size - 1) 4f else 9f)) * min(1f, t / 0.004f)
+            }
+        }
+        for (i in 0 until 300) ulos[n - 1 - i] *= i / 300f
+        return normalisoi(ulos, 0.6f)
+    }
+
     /** The radar: a ping that sweeps up and echoes. */
     fun tutka(): FloatArray {
         val n = (0.7f * TAAJUUS).toInt()

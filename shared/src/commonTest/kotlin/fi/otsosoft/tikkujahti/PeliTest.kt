@@ -13,6 +13,7 @@ import fi.otsosoft.tikkujahti.peli.Aani
 import fi.otsosoft.tikkujahti.peli.Aarre
 import fi.otsosoft.tikkujahti.peli.PalloLaji
 import fi.otsosoft.tikkujahti.peli.Reppu
+import fi.otsosoft.tikkujahti.peli.Taso
 import fi.otsosoft.tikkujahti.peli.Albumi
 import fi.otsosoft.tikkujahti.peli.Heitto
 import fi.otsosoft.tikkujahti.peli.Kamera
@@ -728,6 +729,67 @@ class PeliTest {
         assertTrue(!oikealla.third && oikealla.first == 1f && kotlin.math.abs(oikealla.second) < 0.2f)
         val takana = k.ruudulla(V3(-1f, 0f, 3f))
         assertTrue(!takana.third && takana.first == -1f)
+    }
+
+    @Test
+    fun tasotVaikeutuvatJaEtenevat() {
+        // Each level hides the figures at least as well as the one before
+        for (n in 1..14) {
+            val a = Taso(n)
+            val b = Taso(n + 1)
+            assertTrue(b.piilossa >= a.piilossa && b.paikoissa >= a.paikoissa && b.etaisyys >= a.etaisyys && b.nuolia <= a.nuolia && b.vierailu <= a.vierailu && b.tyypit.containsAll(a.tyypit), "taso ${n + 1} on helpompi kuin $n")
+        }
+        assertEquals(listOf(Tyyppi.TAVALLINEN), Taso(1).tyypit)
+        assertEquals(Tyyppi.entries.toSet(), Taso(8).tyypit.toSet())
+
+        // Out of view far more often on a high level than on the first
+        fun piilossaOsuus(taso: Int): Float {
+            var piilossa = 0
+            var kaikki = 0
+            for (siemen in 1..40) {
+                val peli = Peli(siemen, Albumi.lue("TASO=$taso"))
+                peli.tasot = true
+                peli.etsinta = true
+                peli.aarteita = false
+                peli.maailma.asetaPinnat(listOf(Pinta.suorakaide("iso", PinnanLaji.LATTIA, V3.NOLLA, V3.Y, V3.X, 20f, 20f)))
+                val k = Kamera(V3(0f, 1.3f, 0f), Kehys.luo(V3(0f, -0.4f, -1f)), 0.6f, 0.5f)
+                repeat(60 * 3) { peli.paivita(dt, k) }
+                for (u in peli.ukot) {
+                    kaikki++
+                    if (!k.ruudulla(u.koti ?: u.juuri).third) piilossa++
+                    if (taso == 1) assertEquals(Tyyppi.TAVALLINEN, u.ulkonako.tyyppi)
+                }
+            }
+            assertTrue(kaikki >= 30)
+            return piilossa.toFloat() / kaikki
+        }
+        val helppo = piilossaOsuus(1)
+        val vaikea = piilossaOsuus(9)
+        assertTrue(helppo < 0.35f && vaikea > 0.65f, "näkymän ulkopuolella tasolla 1: $helppo, tasolla 9: $vaikea")
+
+        // Catching the level's quota moves the player up, and that is saved
+        val peli = Peli(1)
+        peli.tasot = true
+        peli.maailma.asetaPinnat(listOf(lattia))
+        peli.ukkojaKerralla = 0
+        peli.aarteita = false
+        var nousu: String? = null
+        repeat(Taso(1).tavoite) {
+            assertEquals(1, peli.taso.numero)
+            val u = ukko(0f)
+            peli.ukot += u
+            peli.paivita(dt, kamera)
+            heitaKohti(peli, u)
+            repeat(60 * 6) {
+                peli.paivita(dt, kamera)
+                peli.tapahtumat.firstOrNull { it.laji == Aani.TASO }?.let { nousu = it.teksti }
+            }
+        }
+        assertEquals(2, peli.taso.numero)
+        assertEquals(0, peli.albumi.edistys)
+        assertTrue(nousu!!.contains("Taso 2") && nousu!!.contains("nopea juoksija"), "ilmoitus: $nousu")
+        val luettu = Albumi.lue(peli.albumi.teksti())
+        assertEquals(2, luettu.taso); assertEquals(Taso(1).tavoite, luettu[Tyyppi.TAVALLINEN])
     }
 
     @Test

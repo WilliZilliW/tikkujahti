@@ -60,15 +60,20 @@ body[data-sivu="labra"] .paneeli { height: 46%; }
 }
 .nappi.ar { background: #2a2630; color: #fff; font-weight: 600; }
 .vihje {
-  position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%);
+  position: absolute; left: 50%; top: calc(122px + env(safe-area-inset-top)); transform: translateX(-50%);
   width: max-content; max-width: 86%; padding: 8px 14px; border-radius: 14px; text-align: center; pointer-events: none;
   background: rgba(42, 38, 48, .72); color: #fff; transition: opacity .6s;
 }
 .vihje.piilo { opacity: 0; }
 body.ar-tila { background: transparent; }
 
+.tasomerkki {
+  position: absolute; left: calc(14px + env(safe-area-inset-left)); top: calc(56px + env(safe-area-inset-top));
+  padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; pointer-events: none;
+  background: rgba(42, 38, 48, .72); color: #fff;
+}
 .putki {
-  position: absolute; left: calc(12px + env(safe-area-inset-left)); top: calc(58px + env(safe-area-inset-top));
+  position: absolute; left: calc(12px + env(safe-area-inset-left)); top: calc(88px + env(safe-area-inset-top));
   padding: 3px 12px; border-radius: 999px; font-weight: 700; pointer-events: none;
   background: #e85d75; color: #fff; opacity: 0; transform: scale(.6); transition: opacity .2s, transform .2s;
 }

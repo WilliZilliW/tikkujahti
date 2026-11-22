@@ -41,6 +41,9 @@ liikettä ja ilmettä kokeilla napista, myös hidastettuna.
   reppuusi (enintään viisi kerrallaan). Verkkopalloa ei voi väistää, tutka paljastaa piiloukot, hidastuspallo
   hidastaa, monipallo hajoaa kolmeksi, hakeutuva kääntyy itse kohti ukkoa, pomppupallo nappaa vielä monen
   pompun jälkeen ja tahmapallo liimaa ukon paikalleen. Pallo valitaan ruudun oikeasta alakulmasta.
+- Pelissä on **tasot**: taso läpäistään nappaamalla tarpeeksi ukkoja. Mitä korkeampi taso, sitä paremmin
+  ukot ovat piilossa (kauempana, näkymän ulkopuolella, nurkissa ja koloissa), sitä harvemmin saat vihjenuolen,
+  ja uusia lajeja tulee mukaan. Ensimmäisellä tasolla on vain tavallisia ukkoja näkyvillä paikoilla.
 - Harvinainen ukko voi **pyristellä pallossa**: napauta palloa nopeasti, tai se karkaa.
 - Peräkkäiset kiinniotot ilman hutia kasvattavat pistekerrointa, ja löydetyt ukot kertyvät albumiin, jossa
   löytymättömistä on vihje.

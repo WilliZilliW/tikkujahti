@@ -54,6 +54,7 @@ class Aanet {
             Aani.HIDASTUS -> soita("hidastus", v) { Syntikka.hidastus() }
             Aani.LIIMA -> soita("liima", v) { Syntikka.liima() }
             Aani.POIMINTA -> soita("poiminta", 0.9) { Syntikka.poiminta() }
+            Aani.TASO -> soita("taso", 0.9) { Syntikka.taso() }
             Aani.PYRISTELY -> soita("pyristely", 0.9) { Syntikka.pyristely() }
             Aani.KARKASI -> soita("karkasi", 0.8) { Syntikka.karkasi() }
             // The glitter of a hidden ball grows louder as the player gets closer

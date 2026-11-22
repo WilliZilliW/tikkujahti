@@ -60,6 +60,7 @@ import fi.otsosoft.tikkujahti.peli.Heitto
 import fi.otsosoft.tikkujahti.peli.Kamera
 import fi.otsosoft.tikkujahti.peli.PalloLaji
 import fi.otsosoft.tikkujahti.peli.Reppu
+import fi.otsosoft.tikkujahti.peli.Taso
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -102,6 +103,7 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         // The player walks about the house looking for figures and balls
         peli.etsinta = true
         peli.ukkojaKerralla = 4
+        peli.tasot = true
     }
     private var seuranta = false
 
@@ -174,7 +176,7 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
             aanet.soita(t, kamera.paikka)
             t.teksti?.let { ilmoita(it) }
             // Something out of view made a sound: an arrow at the edge of the screen shows which way to turn
-            if (t.laji == Aani.AANTELY || (t.laji == Aani.KIMALLUS && t.teksti == null)) {
+            if (t.nuoli && (t.laji == Aani.AANTELY || (t.laji == Aani.KIMALLUS && t.teksti == null))) {
                 val (x, y, nakyvissa) = kamera.ruudulla(t.paikka)
                 if (!nakyvissa && nuolet.size < 3) {
                     nuolet += Nuoli(x, y, t.laji == Aani.KIMALLUS, nyt + 1_700_000_000L)
@@ -324,11 +326,16 @@ fun PeliNakyma() {
                 Box(Modifier.size(24.dp).clip(CircleShape).background(Brush.verticalGradient(0.52f to Color(0xFFFFC93C), 0.52f to Color(0xFFFFF7E6))))
                 Text("$pisteet", Modifier.padding(start = 8.dp), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2A2630))
             }
+            Text(
+                "Taso ${tila.peli.taso.numero} · ${tila.peli.albumi.edistys}/${tila.peli.taso.tavoite}",
+                Modifier.align(Alignment.TopStart).padding(top = 44.dp).clip(RoundedCornerShape(50)).background(Color(0xB82A2630)).padding(horizontal = 10.dp, vertical = 3.dp),
+                color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            )
             // The streak badge shows what the next catch is worth
             if (kerroin > 1) {
                 Text(
                     "×$kerroin",
-                    Modifier.align(Alignment.TopStart).padding(top = 46.dp).clip(RoundedCornerShape(50)).background(Color(0xFFE85D75)).padding(horizontal = 12.dp, vertical = 3.dp),
+                    Modifier.align(Alignment.TopStart).padding(top = 74.dp).clip(RoundedCornerShape(50)).background(Color(0xFFE85D75)).padding(horizontal = 12.dp, vertical = 3.dp),
                     color = Color.White, fontWeight = FontWeight.Bold,
                 )
             }
@@ -345,7 +352,7 @@ fun PeliNakyma() {
             if (vihje != null) {
                 Text(
                     vihje,
-                    Modifier.align(Alignment.TopCenter).padding(top = 56.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xB82A2630)).padding(horizontal = 14.dp, vertical = 8.dp),
+                    Modifier.align(Alignment.TopCenter).padding(top = 108.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xB82A2630)).padding(horizontal = 14.dp, vertical = 8.dp),
                     color = Color.White, textAlign = TextAlign.Center,
                 )
             }
@@ -405,7 +412,7 @@ fun AlbumiNakyma(albumi: Albumi, @Suppress("UNUSED_PARAMETER") keratyt: Int, sul
         ) {
             val tumma = Color(0xFF2A2630)
             Text("Ukkoalbumi ${albumi.loydetty}/${Tyyppi.entries.size}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = tumma)
-            Text("Napattu yhteensä ${albumi.yhteensa}. Kierrä taloa ja etsi jokaista lajia mahdollisimman monta.", fontSize = 13.sp, color = tumma.copy(alpha = 0.7f))
+            Text("Taso ${albumi.taso}. Napattu yhteensä ${albumi.yhteensa}. Kierrä taloa ja etsi jokaista lajia mahdollisimman monta.", fontSize = 13.sp, color = tumma.copy(alpha = 0.7f))
             for (t in Tyyppi.entries) {
                 val maara = albumi[t]
                 val vari = when (t) {
@@ -419,7 +426,8 @@ fun AlbumiNakyma(albumi: Albumi, @Suppress("UNUSED_PARAMETER") keratyt: Int, sul
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(if (maara > 0) t.nimi else "???", fontWeight = FontWeight.Bold, color = tumma)
-                        Text(if (maara > 0) "${t.harvinaisuus.nimi} · ${t.pisteet} p · ${t.vihje}" else t.vihje, fontSize = 13.sp, color = tumma.copy(alpha = 0.7f))
+                        val avautuu = Taso.AVAUTUU[t] ?: 1
+                        Text(if (maara > 0) "${t.harvinaisuus.nimi} · ${t.pisteet} p · ${t.vihje}" else if (avautuu > albumi.taso) "Tulee mukaan tasolla $avautuu." else t.vihje, fontSize = 13.sp, color = tumma.copy(alpha = 0.7f))
                     }
                     if (maara > 0) Text("$maara", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = tumma)
                 }

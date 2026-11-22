@@ -99,6 +99,13 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
   on. Lattia on 7 m säteinen kiekko pelaajan mukana (`LattianHaku.SADE`). Kun näkymän ulkopuolella oleva ukko
   ääntelee tai pallo kimaltaa, ruudun reunaan välähtää nuoli sen suuntaan (`Kamera.ruudulla`). Selaimen
   huoneessa etsintä on pois: ukot tulevat pelaajan eteen.
+- **Tasot** (`peli/Taso.kt`, `Peli.tasot`, päällä selaimessa ja sovelluksessa; omistajan toive: vaikeustaso
+  määrää, miten ukot on piilotettu): taso läpäistään nappaamalla `tavoite` ukkoa (5, 7, 9 … enintään 15).
+  Tason mukaan kasvavat: kuinka usein ukko ilmestyy näkymän ulkopuolelle (10 % → 90 %) ja piilopaikkaan,
+  kuinka kauas, erikoisten osuus, väistötaito ja ukkojen määrä; ja pienenevät reunanuolien todennäköisyys
+  (100 % → 25 %, `Tapahtuma.nuoli`) ja erikoisten viipymä. Lajit avautuvat tasoittain (`Taso.AVAUTUU`: taso 1
+  vain tavallinen … taso 8 kultainen). Taso ja edistyminen tallentuvat albumin mukana (`Albumi.taso`).
+  Kuvatilassa `tyyppi=`-parametri kytkee tasot pois.
 - Erikoisukot lähtevät itse pois `VIERAILU` (40 s) jälkeen, erikoisia on paikalla yksi kerrallaan.
 - Ninja ilmestyy ninjamaisesti (omistajan toive): varjosta, nurkasta tai kolosta savupilven kera
   (`Peli.ninjanPaikka`, `savu`), muuten pudottautuu katosta tai ylhäältä. Lähtiessään se katoaa savuna

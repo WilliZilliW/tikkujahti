@@ -11,6 +11,7 @@ import fi.otsosoft.tikkujahti.matikka.pehmea
 import fi.otsosoft.tikkujahti.peli.Aani
 import fi.otsosoft.tikkujahti.peli.Albumi
 import fi.otsosoft.tikkujahti.peli.Tapahtuma
+import fi.otsosoft.tikkujahti.peli.Taso
 import fi.otsosoft.tikkujahti.peli.Heitto
 import fi.otsosoft.tikkujahti.peli.Kamera
 import fi.otsosoft.tikkujahti.peli.Pallo
@@ -78,6 +79,7 @@ class PeliSivu(private val juuri: HTMLElement) {
     private val kosketus = el("div", "kosketus", hud)
     private val laskuri = el("div", "laskuri", hud)
     private val putki = el("div", "putki", hud)
+    private val tasomerkki = el("div", "tasomerkki", hud)
     private val vihje = el("div", "vihje", hud)
     private val ilmoitus = el("div", "ilmoitus", hud)
     private val nuolet = el("div", "nuolet", hud)
@@ -99,6 +101,7 @@ class PeliSivu(private val juuri: HTMLElement) {
         nakyma.kamera.add(kasiPallo.mesh)
         peli.maailma.asetaPinnat(Huone.pinnat())
         peli.pyristely = true
+        peli.tasot = true
 
         val p = URLSearchParams(window.location.search)
         if (p.get("kuva") != null) {
@@ -122,7 +125,7 @@ class PeliSivu(private val juuri: HTMLElement) {
         for (t in peli.tapahtumat) {
             aanet.soita(t, kamera.paikka)
             t.teksti?.let { ilmoita(it) }
-            if (t.laji == Aani.AANTELY || (t.laji == Aani.KIMALLUS && t.teksti == null)) vihjenuoli(t)
+            if (t.nuoli && (t.laji == Aani.AANTELY || (t.laji == Aani.KIMALLUS && t.teksti == null))) vihjenuoli(t)
         }
         naytaPisteet()
         nakyma.piirra()
@@ -173,6 +176,7 @@ class PeliSivu(private val juuri: HTMLElement) {
 
     private fun naytaPisteet() {
         laskuri.textContent = "${peli.pisteet}"
+        tasomerkki.textContent = "Taso ${peli.taso.numero} · ${peli.albumi.edistys}/${peli.taso.tavoite}"
         // The streak badge shows what the next catch is worth
         val k = peli.kerroin
         putki.textContent = "×$k"
@@ -335,13 +339,18 @@ class PeliSivu(private val juuri: HTMLElement) {
         val kortti = el("div", "kortti", tausta)
         val a = peli.albumi
         el("h2", "", kortti).textContent = "Ukkoalbumi ${a.loydetty}/${Tyyppi.entries.size}"
-        el("div", "pieni", kortti).textContent = "Napattu yhteensä ${a.yhteensa}. Kierrä taloa ja etsi jokaista lajia mahdollisimman monta."
+        el("div", "pieni", kortti).textContent = "Taso ${a.taso}. Napattu yhteensä ${a.yhteensa}. Kierrä taloa ja etsi jokaista lajia mahdollisimman monta."
         for (t in Tyyppi.entries) {
+            val avautuu = Taso.AVAUTUU[t] ?: 1
             val rivi = el("div", if (a[t] > 0) "ukkorivi" else "ukkorivi puuttuu", kortti)
             el("div", "kuvake", rivi).style.setProperty("--v", css(albumiVari(t)))
             val teksti = el("div", "", rivi)
             el("b", "", teksti).textContent = if (a[t] > 0) t.nimi else "???"
-            el("div", "pieni", teksti).textContent = if (a[t] > 0) "${t.harvinaisuus.nimi} · ${t.pisteet} p · ${t.vihje}" else t.vihje
+            el("div", "pieni", teksti).textContent = when {
+                a[t] > 0 -> "${t.harvinaisuus.nimi} · ${t.pisteet} p · ${t.vihje}"
+                avautuu > a.taso -> "Tulee mukaan tasolla $avautuu."
+                else -> t.vihje
+            }
             el("div", "maara", rivi).textContent = if (a[t] > 0) "${a[t]}" else ""
         }
         val sulje = el("button", "nappi", kortti)
@@ -426,6 +435,7 @@ class PeliSivu(private val juuri: HTMLElement) {
         tallennettu = 0
         peli = Peli((js("Date.now()") as Double % 100000.0).toInt(), Tallennus.lueAlbumi(), Tallennus.lueReppu())
         peli.pyristely = true
+        peli.tasot = true
         heittoja = 0
     }
 
@@ -623,6 +633,7 @@ class PeliSivu(private val juuri: HTMLElement) {
 
     private fun kuvatila(p: URLSearchParams) {
         peli = Peli(p.get("siemen")?.toIntOrNull() ?: 4, if (p.get("albumi") != null) Albumi.lue(p.get("albumi")) else Albumi())
+        peli.tasot = p.get("tyyppi") == null
         p.get("tyyppi")?.let { nimi -> Tyyppi.entries.firstOrNull { it.name == nimi } }?.let { peli.tyypit = listOf(it) }
         peli.maailma.asetaPinnat(Huone.pinnat())
         suunta = p.get("suunta")?.toDoubleOrNull() ?: 0.0
