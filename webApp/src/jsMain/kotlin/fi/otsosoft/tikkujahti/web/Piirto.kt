@@ -192,7 +192,7 @@ class PeliPiirto(private val scene: Scene) {
             }
         }
         for (t in peli.tehosteet) {
-            tehosteet.getOrPut(t) { Kupla(t.laji.a).also { scene.add(it.mesh) } }.aseta(t.paikka, t.koko, 0.3f * t.nakyvyys)
+            tehosteet.getOrPut(t) { Kupla(t.vari).also { scene.add(it.mesh) } }.aseta(t.paikka, t.koko, 0.3f * t.nakyvyys)
         }
         val tehosteIt = tehosteet.entries.iterator()
         while (tehosteIt.hasNext()) {

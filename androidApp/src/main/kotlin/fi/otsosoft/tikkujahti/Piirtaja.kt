@@ -121,13 +121,13 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
     private val kieli = aine(Ulkonako.KIELI, 0.45f)
     // Materials per kind of ball, made when first needed: the two colours, and a see-through glow
     private val palloAineet = HashMap<PalloLaji, Pair<MaterialInstance, MaterialInstance>>()
-    private val hehkut = HashMap<PalloLaji, MaterialInstance>()
+    private val hehkut = HashMap<Vari, MaterialInstance>()
     private var kasiLaji = PalloLaji.NORMI
     private var kasiPallo = luoPallo(PalloLaji.NORMI)
     private val muunnos = FloatArray(16)
 
     private fun palloAine(l: PalloLaji) = palloAineet.getOrPut(l) { aine(l.a, 0.4f) to aine(l.b, 0.4f) }
-    private fun hehku(l: PalloLaji) = hehkut.getOrPut(l) { materiaalit.createColorInstance(Color(l.a.r, l.a.g, l.a.b, 0.22f), 0f, 1f, 0f) }
+    private fun hehku(v: Vari) = hehkut.getOrPut(v) { materiaalit.createColorInstance(Color(v.r, v.g, v.b, 0.22f), 0f, 1f, 0f) }
 
     // A figure's vertices are already in world space, so its bounding box is set from its joints every frame:
     // the shadow map is fitted to the casters' boxes, and a loose box would smear the shadows.
@@ -194,7 +194,7 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
     }
 
     private fun luoPallo(l: PalloLaji) = palloAine(l).let { luoPallo(it.first, it.second, true) }
-    private fun luoKupla(l: PalloLaji) = hehku(l).let { luoPallo(it, it, false) }
+    private fun luoKupla(v: Vari) = hehku(v).let { luoPallo(it, it, false) }
 
     private fun asetaPallo(e: Int, p: V3, sade: Float, x: V3, y: V3, z: V3) {
         val m = muunnos
@@ -253,7 +253,7 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
         }
         // Special balls lying about: bobbing, turning, with a pulsing glow so they catch the eye
         for (a in peli.aarteet) {
-            val (pallo, kupla) = aarteet.getOrPut(a) { luoPallo(a.laji) to luoKupla(a.laji) }
+            val (pallo, kupla) = aarteet.getOrPut(a) { luoPallo(a.laji) to luoKupla(a.laji.a) }
             val esiin = pehmea(a.ika / 0.4f) * (1f - pehmea(a.ika - Peli.AARTEEN_IKA + 1f))
             val p = a.paikka + V3.Y * (0.015f * sin(a.ika * 2.5f))
             val kulma = a.ika * 1.6f
@@ -268,7 +268,7 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
                 aarreIt.remove()
             }
         }
-        for (t in peli.tehosteet) asetaPallo(tehosteet.getOrPut(t) { luoKupla(t.laji) }, t.paikka, t.koko, V3.X, V3.Y, V3.Z)
+        for (t in peli.tehosteet) asetaPallo(tehosteet.getOrPut(t) { luoKupla(t.vari) }, t.paikka, t.koko, V3.X, V3.Y, V3.Z)
         val tehosteIt = tehosteet.entries.iterator()
         while (tehosteIt.hasNext()) {
             val e = tehosteIt.next()

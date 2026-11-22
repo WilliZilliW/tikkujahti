@@ -379,6 +379,14 @@ class Ukko(
         if (!ilmassa) meneKohti(pois, true)
     }
 
+    /** Gone in an instant: a ninja leaving in its puff of smoke. */
+    fun katoa() {
+        if (kiinni) return
+        oma.nakyvissa = false
+        asento.nakyvissa = false
+        valmis = true
+    }
+
     /** A ball bounced off: the wrong kind of ball, or a shield in the way. The figure gloats. */
     fun torju() {
         if (kiinni || valmis) return

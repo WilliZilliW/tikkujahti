@@ -87,6 +87,9 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
   napauttaa palloa (`Peli.napauta`), muuten ukko karkaa. Päällä vain kun `peli.pyristely = true` (alustat
   kytkevät; testeissä ja labrassa pois).
 - Erikoisukot lähtevät itse pois `VIERAILU` (40 s) jälkeen, erikoisia on paikalla yksi kerrallaan.
+- Ninja ilmestyy ninjamaisesti (omistajan toive): varjosta, nurkasta tai kolosta savupilven kera
+  (`Peli.ninjanPaikka`, `savu`), muuten pudottautuu katosta tai ylhäältä. Lähtiessään se katoaa savuna
+  (`Ukko.katoa`) eikä kävele pois.
 - **Pallot** (`peli/Pallo.kt`: `PalloLaji`, `Reppu`): NORMI (loputon), VERKKO (ei voi väistää/torjua, iso
   osuma-alue), TUTKA (paljastaa piiloukot 4 m säteeltä), HIDASTUS (hidastaa 1,3 m säteeltä), MONI (hajoaa
   kolmeksi), HAKEUTUVA (ohjautuu lähimpään), KULTAINEN, POMPPU (nappaa vielä 5 pompun jälkeen), TAHMA (liimaa

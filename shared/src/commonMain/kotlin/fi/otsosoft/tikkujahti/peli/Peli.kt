@@ -53,8 +53,8 @@ class Aarre(val laji: PalloLaji, val paikka: V3) {
     internal var kilahdus = 0.5f
 }
 
-/** A burst spreading from where a special ball went off: drawn as a growing, fading sphere. */
-class Tehoste(val laji: PalloLaji, val paikka: V3, val sade: Float, val kesto: Float) {
+/** A burst: a special ball going off, a ninja's puff of smoke. Drawn as a growing, fading sphere. */
+class Tehoste(val vari: Vari, val paikka: V3, val sade: Float, val kesto: Float) {
     var ika = 0f
     /** Radius now. */
     val koko: Float get() = sade * pehmea(ika / kesto * 1.4f)
@@ -205,7 +205,11 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
             }
             u.pallo = lahin?.p
             // Special figures do not hang about for ever: miss your chance and they slip away
-            if (u.ulkonako.tyyppi != Tyyppi.TAVALLINEN && tyypit.size > 1 && u.ika > VIERAILU && !u.kiinni && !u.ilmassa && lahin == null) {
+            if (u.ulkonako.tyyppi == Tyyppi.NINJA && tyypit.size > 1 && u.ika > VIERAILU && !u.kiinni && !u.ilmassa && lahin == null) {
+                // A ninja does not walk away: a puff of smoke, and it is gone
+                savu(u.keskipiste, u.m.pituus)
+                u.katoa()
+            } else if (u.ulkonako.tyyppi != Tyyppi.TAVALLINEN && tyypit.size > 1 && u.ika > VIERAILU && !u.kiinni && !u.ilmassa && lahin == null) {
                 val pois = (u.juuri - kamera.paikka).vaakaan().suunta(V3.Z)
                 u.pakene(u.juuri + (if (u.seinalla) V3.Y * 0.6f else pois * 1.2f))
             }
@@ -553,12 +557,12 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         when (pallo.laji) {
             PalloLaji.TUTKA -> {
                 for (u in ukot) if (u.juuri.etaisyys(pallo.p) < TUTKAN_SADE) u.paljasta(10f)
-                tehosteet += Tehoste(pallo.laji, pallo.p, TUTKAN_SADE, 1.1f)
+                tehosteet += Tehoste(pallo.laji.a, pallo.p, TUTKAN_SADE, 1.1f)
                 tapahtumat += Tapahtuma(Aani.TUTKA, pallo.p)
             }
             PalloLaji.HIDASTUS -> {
                 for (u in ukot) if (u.keskipiste.etaisyys(pallo.p) < HIDASTUKSEN_SADE) u.hidasta(8f)
-                tehosteet += Tehoste(pallo.laji, pallo.p, HIDASTUKSEN_SADE, 0.9f)
+                tehosteet += Tehoste(pallo.laji.a, pallo.p, HIDASTUKSEN_SADE, 0.9f)
                 tapahtumat += Tapahtuma(Aani.HIDASTUS, pallo.p)
             }
             else -> {}
@@ -688,6 +692,28 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
     // New figures
     // =====================================================================================================
 
+    /** A ninja's puff of smoke. */
+    private fun savu(p: V3, koko: Float) {
+        tehosteet += Tehoste(SAVU, p, koko * 0.9f, 0.7f)
+        tehosteet += Tehoste(SAVU, p + V3.Y * (koko * 0.3f), koko * 0.6f, 0.9f)
+        tapahtumat += Tapahtuma(Aani.HEITTO, p, 0.2f)
+    }
+
+    /**
+     * Where a ninja turns up: out of a shadow, a corner or a nook if the room has any within sight, and
+     * otherwise (or half the time anyway) dropping from above.
+     */
+    private fun ninjanPaikka(kamera: Kamera, lattia: Pinta): V3? {
+        val eteen = kamera.kehys.eteen.vaakaan().suunta(V3.Z)
+        val paikat = maailma.paikat.filter { p ->
+            val ero = (p.piste - kamera.paikka).vaakaan()
+            // Shadows first; all of them in front of the player, not too near and not too far
+            p.lattialla && ero.pituus in 0.8f..4.5f && (ero.suunta() dot eteen) > 0.3f && ukot.none { (it.juuri - p.piste).pituus < 0.3f }
+        }
+        val varjot = paikat.filter { it.laji == PaikanLaji.VARJO }
+        return (if (varjot.isNotEmpty() && rnd.nextFloat() < 0.7f) varjot else paikat).randomOrNull(rnd)?.piste?.let { lattia.lahinPiste(it, 0.06f) }
+    }
+
     /** A free spot on the floor in front of the player. */
     private fun paikkaNakyvissa(kamera: Kamera, lattia: Pinta, varo: List<Ukko>): V3? {
         val kulma = suuntakulma(kamera.kehys.eteen.vaakaan().suunta(V3.Z))
@@ -728,9 +754,8 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         if (vari == edellinenVari) vari = (vari + 1) % Ulkonako.VARIT.size
         edellinenVari = vari
         val tyyppi = arvoTyyppi()
-        val kohtiKatsojaa = suuntakulma((kamera.paikka - p).vaakaan())
-        fun luo(paikka: V3, pinta: Pinta = lattia): Ukko {
-            val u = Ukko(seuraavaId++, luoUlkonako(tyyppi, Ulkonako.VARIT[vari], rnd), paikka, kohtiKatsojaa, rnd.nextInt(), pinta = pinta)
+        fun luo(paikka: V3, pinta: Pinta = lattia, korkeus: Float? = null): Ukko {
+            val u = Ukko(seuraavaId++, luoUlkonako(tyyppi, Ulkonako.VARIT[vari], rnd), paikka, suuntakulma((kamera.paikka - paikka).vaakaan()), rnd.nextInt(), alkuKorkeus = korkeus, pinta = pinta)
             u.maanTaso = lattia.keskus.y
             u.katsoja = kamera.paikka
             ukot += u
@@ -761,12 +786,25 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
                 val pp = poyta?.satunnainenPiste(rnd, 0.1f)
                 if (poyta != null && pp != null) luo(pp, poyta) else luo(p)
             }
+            Tyyppi.NINJA -> {
+                val piilo = if (rnd.nextFloat() < 0.6f) ninjanPaikka(kamera, lattia) else null
+                if (piilo != null) {
+                    // Out of the shadows, in a puff of smoke
+                    val u = luo(piilo, korkeus = 0.03f)
+                    savu(piilo + V3.Y * (u.m.pituus * 0.5f), u.m.pituus)
+                } else {
+                    // Dropping in from above: from the ceiling if there is one, else from well overhead
+                    val katto = maailma.pinnat.filter { it.laji == PinnanLaji.KATTO && it.sisalla(p) }.minOfOrNull { it.keskus.y }
+                    luo(p, korkeus = ((katto ?: (lattia.keskus.y + 2.2f)) - lattia.keskus.y - 0.3f).coerceIn(1.2f, 2.6f))
+                }
+            }
             else -> luo(p)
         }
     }
 
     companion object {
         const val SUURIN_KERROIN = 5
+        val SAVU = Vari.hex(0x6B6875)
         /** How long the player has to tap a ball with a struggling figure in it, seconds. */
         const val PYRISTELYAIKA = 2.2f
         /** How long a special figure stays if nobody catches it, seconds. */

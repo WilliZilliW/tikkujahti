@@ -639,6 +639,56 @@ class PeliTest {
     }
 
     @Test
+    fun ninjaIlmestyyPiilostaTaiYlhaaltaJaKatoaaSavuna() {
+        var piilosta = 0
+        var ylhaalta = 0
+        for (siemen in 1..12) {
+            val peli = Peli(siemen)
+            peli.maailma.asetaPinnat(Huone.pinnat())
+            peli.tyypit = listOf(Tyyppi.NINJA)
+            peli.ukkojaKerralla = 1
+            peli.aarteita = false
+            // Looking into the far left corner of the room
+            val k = Kamera(V3(0.5f, 0.7f, 0.5f), Kehys.luo(V3(-0.6f, -0.2f, -1f)), 0.53f, 0.5f)
+            var ninja: Ukko? = null
+            var savua = false
+            repeat(60 * 8) {
+                if (ninja != null) return@repeat
+                peli.paivita(dt, k)
+                ninja = peli.ukot.firstOrNull()
+                savua = peli.tehosteet.isNotEmpty()
+            }
+            val u = assertNotNull(ninja)
+            val paikalla = peli.maailma.paikat.any { (it.piste - u.juuri).pituus < 0.1f }
+            if (paikalla) {
+                piilosta++
+                assertTrue(savua, "siemen $siemen: ninja tuli piilosta ilman savua")
+                assertTrue(u.keskipiste.y < 0.4f)
+            } else {
+                ylhaalta++
+                assertTrue(u.ilmassa && u.keskipiste.y > 1.2f, "siemen $siemen: ninja ei tullut piilosta eikä ylhäältä: ${u.juuri}, ${u.keskipiste}")
+            }
+        }
+        assertTrue(piilosta >= 3 && ylhaalta >= 2, "piilosta $piilosta, ylhäältä $ylhaalta")
+
+        // An uncaught ninja vanishes in smoke instead of walking off
+        val peli = Peli(1)
+        peli.maailma.asetaPinnat(Huone.pinnat())
+        peli.tyypit = listOf(Tyyppi.NINJA, Tyyppi.TAVALLINEN)
+        peli.ukkojaKerralla = 0
+        val k = Kamera(V3(0f, 0.7f, 1.7f), Kehys.luo(V3(0f, -0.28f, -1f)), 0.53f, 0.5f)
+        val u = Ukko(1, Peli.luoUlkonako(Tyyppi.NINJA, Ulkonako.VARIT[0], kotlin.random.Random(1)), V3(0f, 0f, -0.3f), 0f, 3)
+        u.omatoiminen = false
+        peli.ukot += u
+        var savua = false
+        repeat((60 * (Peli.VIERAILU + 3f)).toInt()) {
+            peli.paivita(dt, k)
+            if (peli.ukot.isEmpty() && peli.tehosteet.isNotEmpty()) savua = true
+        }
+        assertTrue(peli.ukot.isEmpty() && savua, "ninja ei kadonnut savuna")
+    }
+
+    @Test
     fun albumiSailyyTallennuksessa() {
         val a = Albumi()
         a.lisaa(Tyyppi.ISO); a.lisaa(Tyyppi.TAVALLINEN); a.lisaa(Tyyppi.TAVALLINEN)
