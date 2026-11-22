@@ -40,8 +40,8 @@ liikettä ja ilmettä kokeilla napista, myös hidastettuna.
 - Harvinainen ukko voi **pyristellä pallossa**: napauta palloa nopeasti, tai se karkaa.
 - Peräkkäiset kiinniotot ilman hutia kasvattavat pistekerrointa, ja löydetyt ukot kertyvät albumiin, jossa
   löytymättömistä on vihje.
-- Sovelluksessa: liikuttele puhelinta hitaasti ja osoita lattiaa, niin ukot ilmestyvät, kun lattia on
-  tunnistettu. Selaimen AR-tilassa napauta lattiaa, kun rengas näkyy.
+- AR:ssä ei tarvitse tehdä mitään alkuun: katsele puhelimella lattiaa, niin ukot alkavat ilmestyä. Peli
+  etsii lattian itse ja tarkentaa sen paikkaa pelin aikana.
 - Selaimen huoneessa: vedä ruudun yläosasta katsellaksesi ympärillesi.
 
 ## Rakenne

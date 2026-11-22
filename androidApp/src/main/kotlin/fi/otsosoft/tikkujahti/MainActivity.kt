@@ -47,6 +47,7 @@ import com.google.ar.core.Config
 import com.google.ar.core.Frame
 import com.google.ar.core.Plane
 import com.google.ar.core.Session
+import fi.otsosoft.tikkujahti.maailma.LattianHaku
 import fi.otsosoft.tikkujahti.matikka.Kehys
 import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.matikka.pehmea
@@ -103,6 +104,10 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
 
     var lattia: Plane? = null
         private set
+    /** There is a floor to play on, real or guessed. */
+    var pelissa = false
+        private set
+    private val haku = LattianHaku()
     val kadenKoko: Float get() = pehmea(-kasiTauko / 0.2f)
 
     /** One AR frame: read the room and the camera, then advance the game. */
@@ -114,7 +119,11 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         if (!seuranta || dt <= 0f) return
         val (pinnat, lattiataso) = ArMaailma.pinnat(session)
         lattia = lattiataso
-        peli.maailma.asetaPinnat(pinnat)
+        // Until ARCore has found the floor, play on a guessed one, so that figures turn up without a wait
+        haku.ruutu(dt, kamera.paikka, null)
+        val arvaus = if (lattiataso == null) haku.lattia(kamera.paikka) else null
+        peli.maailma.asetaPinnat(if (arvaus != null) pinnat + arvaus else pinnat)
+        pelissa = peli.maailma.lattia != null
         peli.paivita(dt, kamera)
         for (t in peli.tapahtumat) {
             aanet.soita(t, kamera.paikka)
@@ -138,7 +147,7 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
 
     /** Where the ball in the hand is in the world, or null when there is none to show. */
     fun kadenPaikka(): V3? {
-        if (!seuranta || lattia == null || kasiTauko > 0f) return null
+        if (!seuranta || !pelissa || kasiTauko > 0f) return null
         return kamera.paikka + (kamera.kehys.eteen +
             kamera.kehys.oikealle * (kasiX * kamera.tanPuoliFov * kamera.kuvasuhde) +
             kamera.kehys.ylos * (kasiY * kamera.tanPuoliFov)) * KASI_SYVYYS
@@ -150,7 +159,7 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         val y = 1f - e.y / koko.height * 2f
         val t = e.eventTime / 1000f
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> if (lattia != null && kasiTauko <= 0f) pyyhkaisy.aloita(x, y, t) else if (lattia != null) peli.napauta(x, y, kamera)
+            MotionEvent.ACTION_DOWN -> if (pelissa && kasiTauko <= 0f) pyyhkaisy.aloita(x, y, t) else if (pelissa) peli.napauta(x, y, kamera)
             MotionEvent.ACTION_MOVE -> if (pyyhkaisy.kaynnissa) {
                 pyyhkaisy.lisaa(x, y, t)
                 kasiX = x; kasiY = y
@@ -209,6 +218,7 @@ fun PeliNakyma() {
     val piirtaja = remember(engine, scene) { Piirtaja(engine, scene, materiaalit) }
     var koko by remember { mutableStateOf(IntSize.Zero) }
     var lattia by remember { mutableStateOf<Plane?>(null) }
+    var pelissa by remember { mutableStateOf(false) }
     var keratyt by remember { mutableIntStateOf(0) }
     var heitot by remember { mutableIntStateOf(0) }
 
@@ -235,6 +245,7 @@ fun PeliNakyma() {
                 tila.ruutu(session, frame)
                 piirtaja.paivita(tila.peli, tila.kadenPaikka(), tila.kadenKoko)
                 lattia = tila.lattia
+                pelissa = tila.pelissa
                 keratyt = tila.peli.keratyt
                 pisteet = tila.peli.pisteet
                 kerroin = tila.peli.kerroin
@@ -271,7 +282,7 @@ fun PeliNakyma() {
                 color = Color(0xFF2A2630),
             )
             val vihje = when {
-                lattia == null -> "Liikuttele puhelinta hitaasti ja osoita lattiaa, niin ukot löytävät paikalle."
+                !pelissa -> "Katsele puhelimella lattiaa: ukot tulevat kohta esiin."
                 heitot < 2 -> "Pyyhkäise ylöspäin heittääksesi pallon."
                 else -> null
             }
@@ -286,7 +297,7 @@ fun PeliNakyma() {
         // The balls to choose from: plain ones without end, and the special ones in the bag
         val reppu = tila.peli.reppu
         val omat = remember(reppuMuutos) { PalloLaji.entries.filter { it == PalloLaji.NORMI || reppu[it] > 0 } }
-        if (omat.size > 1 && lattia != null) {
+        if (omat.size > 1 && pelissa) {
             Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (l in omat.reversed()) {
                     Box(contentAlignment = Alignment.TopEnd) {

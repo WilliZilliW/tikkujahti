@@ -1,6 +1,7 @@
 package fi.otsosoft.tikkujahti.web
 
 import fi.otsosoft.tikkujahti.maailma.Huone
+import fi.otsosoft.tikkujahti.maailma.LattianHaku
 import fi.otsosoft.tikkujahti.maailma.PinnanLaji
 import fi.otsosoft.tikkujahti.maailma.Pinta
 import fi.otsosoft.tikkujahti.matikka.Kehys
@@ -32,7 +33,7 @@ import kotlin.math.tan
  * The game page. Two modes share everything but the camera and the floor:
  *  - the room: a virtual room on any device; drag to look around
  *  - AR (WebXR immersive-ar, Android Chrome): the phone's camera is the game camera, and the floor is
- *    where the player taps on a detected surface
+ *    found by itself ([LattianHaku])
  *
  * A swipe up from the ball throws it.
  */
@@ -59,9 +60,8 @@ class PeliSivu(private val juuri: HTMLElement) {
     // AR
     private var ar: dynamic = null
     private var osumalahde: dynamic = null
-    private var arOsuma: V3? = null
     private var arLattia = false
-    private val tahtain = Mesh(RingGeometry(0.09, 0.11, 40).rotateX(-PI / 2), MeshBasicMaterial(olio { color = 0xffffff }))
+    private var haku = LattianHaku()
     private val varjotaso = Mesh(PlaneGeometry(8.0, 8.0).rotateX(-PI / 2), ShadowMaterial(olio { opacity = 0.32 }))
 
     // HUD
@@ -81,8 +81,6 @@ class PeliSivu(private val juuri: HTMLElement) {
     init {
         rakennaHuone()
         nakyma.scene.add(huone)
-        tahtain.visible = false
-        nakyma.scene.add(tahtain)
         varjotaso.visible = false
         varjotaso.receiveShadow = true
         nakyma.scene.add(varjotaso)
@@ -108,7 +106,7 @@ class PeliSivu(private val juuri: HTMLElement) {
     private fun ruutu(aika: Double, xrRuutu: dynamic) {
         val dt = if (edellinen < 0) 0.016 else ((aika - edellinen) / 1000.0).coerceIn(0.0, 0.05)
         edellinen = aika
-        if (ar != null) arKamera(xrRuutu) else huoneKamera()
+        if (ar != null) arKamera(xrRuutu, dt.toFloat()) else huoneKamera()
         paivita(dt.toFloat())
         for (t in peli.tapahtumat) {
             aanet.soita(t, kamera.paikka)
@@ -272,8 +270,6 @@ class PeliSivu(private val juuri: HTMLElement) {
                 // A touch that did not move is a tap, not a look around
                 val liike = kotlin.math.hypot((e.clientX as Double) - alkuX, (e.clientY as Double) - alkuY)
                 if (ev.type == "pointerup" && liike < 12.0) peli.napauta(nx(e), ny(e), kamera)
-            } else if (ar != null && !arLattia && ev.type == "pointerup") {
-                asetaArLattia()
             }
         }
         kosketus.addEventListener("pointerup", irti)
@@ -341,7 +337,7 @@ class PeliSivu(private val juuri: HTMLElement) {
         xr.requestSession("immersive-ar", asetukset).then({ istunto: dynamic ->
             ar = istunto
             arLattia = false
-            arOsuma = null
+            haku = LattianHaku()
             uusiPeli()
             huone.visible = false
             document.body?.classList?.add("ar-tila")
@@ -355,9 +351,7 @@ class PeliSivu(private val juuri: HTMLElement) {
                 istunto.requestHitTestSource(olio { space = katsoja }).then { lahde: dynamic -> osumalahde = lahde }
             }
             istunto.addEventListener("select", {
-                if (!arLattia) {
-                    asetaArLattia()
-                } else if (istunto.domOverlayState == null || istunto.domOverlayState == undefined) {
+                if (arLattia && (istunto.domOverlayState == null || istunto.domOverlayState == undefined)) {
                     // No overlay, so no swipes: a tap throws straight ahead
                     if (kasiTauko <= 0.0) heita(Heitto(0f, 0f, 0.5f, 0f))
                 }
@@ -373,7 +367,6 @@ class PeliSivu(private val juuri: HTMLElement) {
         ar = null
         osumalahde = null
         arLattia = false
-        tahtain.visible = false
         varjotaso.visible = false
         huone.visible = true
         document.body?.classList?.remove("ar-tila")
@@ -393,8 +386,8 @@ class PeliSivu(private val juuri: HTMLElement) {
         heittoja = 0
     }
 
-    /** Reads the phone's pose and lens from WebXR, and looks for the floor until it is set. */
-    private fun arKamera(xrRuutu: dynamic) {
+    /** Reads the phone's pose and lens from WebXR, and keeps looking for the floor. */
+    private fun arKamera(xrRuutu: dynamic, dt: Float) {
         if (xrRuutu == null || xrRuutu == undefined) return
         val tila = nakyma.renderoija.xr.getReferenceSpace() ?: return
         val asento = xrRuutu.getViewerPose(tila)
@@ -411,34 +404,28 @@ class PeliSivu(private val juuri: HTMLElement) {
             kamera.tanPuoliFov = (1.0 / (proj[5] as Double)).toFloat()
             kamera.kuvasuhde = ((proj[5] as Double) / (proj[0] as Double)).toFloat()
         }
-        if (!arLattia && osumalahde != null) {
+        // The floor is found without the player doing anything: whatever upward surface is under the middle
+        // of the view, or a guess if nothing has been seen yet
+        var havaittu: Float? = null
+        if (osumalahde != null) {
             val osumat = xrRuutu.getHitTestResults(osumalahde)
-            var loytyi = false
             if ((osumat.length as Int) > 0) {
                 val m = osumat[0].getPose(tila)?.transform?.matrix
-                // Only surfaces facing up will do as a floor
-                if (m != null && m != undefined && (m[5] as Double) > 0.9) {
-                    loytyi = true
-                    arOsuma = V3((m[12] as Double).toFloat(), (m[13] as Double).toFloat(), (m[14] as Double).toFloat())
-                    tahtain.position.set(m[12] as Double, (m[13] as Double) + 0.003, m[14] as Double)
-                }
+                if (m != null && m != undefined && (m[5] as Double) > 0.9) havaittu = (m[13] as Double).toFloat()
             }
-            if (!loytyi) arOsuma = null
-            tahtain.visible = loytyi
         }
-    }
-
-    /** The floor in AR: a wide disc at the height of the surface the player tapped. */
-    private fun asetaArLattia() {
-        val keskus = arOsuma ?: return
-        val reuna = List(20) { i -> (cos(i * PI / 10) * AR_LATTIAN_SADE).toFloat() to (sin(i * PI / 10) * AR_LATTIAN_SADE).toFloat() }
-        peli.maailma.asetaPinnat(listOf(Pinta("ar-lattia", PinnanLaji.LATTIA, keskus, V3.Y, V3.X, reuna)))
-        arLattia = true
-        tahtain.visible = false
-        varjotaso.visible = true
-        varjotaso.position.set(keskus.x.toDouble(), keskus.y.toDouble(), keskus.z.toDouble())
-        asetaValo(keskus)
-        vihje.textContent = "Pyyhkäise ylöspäin heittääksesi pallon."
+        haku.ruutu(dt, kamera.paikka, havaittu)
+        val lattia = haku.lattia(kamera.paikka)
+        if (lattia != null && lattia !== peli.maailma.lattia) {
+            peli.maailma.asetaPinnat(listOf(lattia))
+            varjotaso.visible = true
+            varjotaso.position.set(lattia.keskus.x.toDouble(), lattia.keskus.y.toDouble(), lattia.keskus.z.toDouble())
+            asetaValo(lattia.keskus)
+            if (!arLattia) {
+                arLattia = true
+                vihje.textContent = "Pyyhkäise ylöspäin heittääksesi pallon."
+            }
+        }
     }
 
     private fun asetaValo(kohde: V3) {
@@ -578,9 +565,8 @@ class PeliSivu(private val juuri: HTMLElement) {
 
         const val KASI_LEPO_Y = -0.72f
         const val KASI_SYVYYS = 0.5f
-        const val AR_LATTIAN_SADE = 3.0
         const val VIHJE_HUONE = "Pyyhkäise pallosta ylöspäin heittääksesi. Vedä ylempää katsellaksesi ympärillesi."
-        const val VIHJE_AR = "Osoita puhelimella lattiaa ja napauta, kun rengas näkyy."
+        const val VIHJE_AR = "Katsele puhelimella lattiaa: ukot tulevat kohta esiin."
         private val apuQ = Quaternion()
         private val apuV = Vector3()
     }

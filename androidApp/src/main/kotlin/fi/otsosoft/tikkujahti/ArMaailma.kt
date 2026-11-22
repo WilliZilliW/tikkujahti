@@ -13,7 +13,7 @@ import fi.otsosoft.tikkujahti.peli.Kamera
 /** ARCore's view of the room turned into the game's own terms. */
 object ArMaailma {
     /** A plane has to be at least this big (m²) before figures are let loose on it. */
-    const val LATTIAN_VAHIMMAISALA = 0.5f
+    const val LATTIAN_VAHIMMAISALA = 0.3f
 
     /**
      * Every tracked plane as a [Pinta]. The floor is the biggest upward plane near the lowest one found,

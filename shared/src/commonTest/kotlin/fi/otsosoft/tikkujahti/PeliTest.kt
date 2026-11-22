@@ -5,6 +5,7 @@ import fi.otsosoft.tikkujahti.maailma.Pinta
 import fi.otsosoft.tikkujahti.matikka.Kehys
 import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.maailma.Huone
+import fi.otsosoft.tikkujahti.maailma.LattianHaku
 import fi.otsosoft.tikkujahti.peli.Aani
 import fi.otsosoft.tikkujahti.peli.Aarre
 import fi.otsosoft.tikkujahti.peli.PalloLaji
@@ -533,6 +534,36 @@ class PeliTest {
         assertTrue(u.toiminto != Toiminto.ISTUU)
         repeat(60) { u.paivita(dt) }
         for (n in Nivel.entries) assertTrue(u.asento[n].y > 0.5f - 0.004f, "$n jäi pöydän alle noustua")
+    }
+
+    @Test
+    fun lattiaLoytyyItsestaan() {
+        val kam = V3(0f, 0.1f, 0f)
+        // Nothing seen: after a moment the floor is guessed below the phone
+        val h = LattianHaku()
+        repeat(60) { h.ruutu(dt, kam, null) }
+        assertNull(h.lattia(kam))
+        repeat(120) { h.ruutu(dt, kam, null) }
+        assertTrue(h.arvattu)
+        assertEquals(0.1f - LattianHaku.OLETUSKORKEUS, h.y!!, 1e-4f)
+        // A real surface replaces the guess; a table close under the phone does not
+        h.ruutu(dt, kam, -0.2f)
+        assertTrue(h.arvattu)
+        h.ruutu(dt, kam, -0.9f)
+        assertTrue(!h.arvattu)
+        assertEquals(-0.9f, h.y!!, 1e-4f)
+        // A clearly lower surface seen later is the real floor
+        h.ruutu(dt, kam, -1.3f)
+        assertEquals(-1.3f, h.y!!, 1e-4f)
+        // The disc follows the player, but is not rebuilt for nothing
+        val a = assertNotNull(h.lattia(kam))
+        assertTrue(a === h.lattia(kam + V3(0.5f, 0f, 0f)))
+        val b = assertNotNull(h.lattia(kam + V3(1.5f, 0f, 0f)))
+        assertTrue(a !== b && b.sisalla(kam + V3(3f, 0f, 0f)))
+        // Seen at once: no waiting at all
+        val h2 = LattianHaku()
+        h2.ruutu(dt, kam, -1.1f)
+        assertEquals(-1.1f, assertNotNull(h2.lattia(kam)).keskus.y, 1e-4f)
     }
 
     @Test

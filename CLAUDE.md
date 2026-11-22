@@ -45,6 +45,10 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
 `shared/src/commonMain/kotlin/fi/otsosoft/tikkujahti/`:
 - `matikka/` – `V3`, `Kehys` (oikealle = eteen × ylos, eli (oikealle, ylos, eteen) on vasenkätinen), `Jousi`.
 - `maailma/Pinta.kt` – pinnat monikulmioina, `Maailma`. `maailma/Huone.kt` – selainversion huoneen pinnat.
+  `maailma/LattianHaku.kt` – AR-lattia ilman pelaajan toimia (omistajan palaute 22.11.2026: lattiaa ei saa
+  joutua napauttamaan, ukkojen pitää vain alkaa ilmestyä): ensimmäinen ylöspäin osoittava pinta reilusti
+  puhelimen alla on lattia, selvästi alempi korvaa sen, ja 2,5 s:n jälkeen lattia arvataan 1,25 m puhelimen
+  alle, kunnes oikea löytyy. Selain syöttää sille hit-testin, Android käyttää arvausta kunnes ARCore löytää tason.
 - `ukko/Ukko.kt` – aivot ja animaatio, `ukko/Nukke.kt` – ragdoll, `Asento`, `Ulkonako` (mitat, luonne, värit).
   Ukko suosii kävelykohteita pelaajan näkökentässä (`katsojanSuunta`).
 - `mesh/Verkko.kt` – kiinteän topologian verkko osittain (materiaaleittain). `mesh/UkkoVerkko.kt` – ukko:
@@ -107,7 +111,9 @@ ja tarkista, että ajot menivät läpi.
 ## Tarkistettava laitteella (ei voi pilvessä)
 - Android: näkyvätkö ukot ja pallot (materiaali `createColorInstance`, TANGENTS-kvaterniot), varjo lattialla
   (`ShadowReceiverPlane`), ukkojen koko ja paikka, kosketuksen suunta (`displayOrientedPose`), äänet.
-- WebXR: lattian asetus napauttamalla, pyyhkäisy dom-overlayn läpi, varjo (`ShadowMaterial`).
+- WebXR: omistaja on käynnistänyt AR-tilan puhelimella (lattian napautus toimi; se korvattiin sittemmin
+  automaattisella haulla, jota ei ole laitteella kokeiltu). Tarkistamatta: osuuko arvattu/löydetty lattia
+  kohdalleen, pyyhkäisy dom-overlayn läpi, varjo (`ShadowMaterial`).
 - Heiton tuntuma (`Pyyhkaisy.lopeta`, `Peli.heita`: vauhti 3,2–7,5 m/s, `TAHTAYSAPU`, `OSUMA_APU`) ja
   väistöjen määrä (`Luonne.vaistotaito` 0,15–0,65) ovat arvauksia: säädä palautteen mukaan.
 
