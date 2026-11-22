@@ -1,0 +1,13 @@
+.gradle/
+.kotlin/
+build/
+local.properties
+*.jks
+*.keystore
+# test-version signing key (public password "android"); never used for Play releases
+!androidApp/testiavain.keystore
+.idea/
+*.iml
+node_modules/
+# screenshots and recordings made while developing (tools/kuvat.mjs)
+/kuvat/

@@ -1,0 +1,23 @@
+[versions]
+agp = "9.5.2"
+kotlin = "2.4.21"
+# SceneView releases almost daily and its API moves fast: update only on purpose, and check the AR screen after.
+sceneview = "4.66.0"
+arcore = "1.57.0"
+composeBom = "2026.09.00"
+activityCompose = "1.12.4"
+three = "0.187.0"
+
+[libraries]
+arsceneview = { module = "io.github.sceneview:arsceneview", version.ref = "sceneview" }
+arcore = { module = "com.google.ar:core", version.ref = "arcore" }
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-foundation = { module = "androidx.compose.foundation:foundation" }
+compose-material3 = { module = "androidx.compose.material3:material3" }
+activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

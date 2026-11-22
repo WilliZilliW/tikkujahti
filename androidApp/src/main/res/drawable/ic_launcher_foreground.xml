@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A stick figure waving next to a ball, drawn in the adaptive icon's 108dp canvas (safe zone 66dp) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- ball -->
+    <path android:fillColor="#3D8BFF"
+        android:pathData="M73,66 m-9,0 a9,9 0,1 1,18 0 a9,9 0,1 1,-18 0" />
+    <path android:fillColor="#9CC4FF"
+        android:pathData="M70,62 m-2.5,0 a2.5,2.5 0,1 1,5 0 a2.5,2.5 0,1 1,-5 0" />
+    <!-- body, legs and arms -->
+    <path android:strokeColor="#F08A24" android:strokeWidth="5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M48,50 L46,66 M46,66 L40,78 M46,66 L53,77 M47,54 L37,58 L33,66 M47,54 L56,48 L60,38" />
+    <!-- head -->
+    <path android:fillColor="#F08A24"
+        android:pathData="M49,39 m-10,0 a10,10 0,1 1,20 0 a10,10 0,1 1,-20 0" />
+    <!-- eyes -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M46,38 m-3,0 a3,3.6 0,1 1,6 0 a3,3.6 0,1 1,-6 0 M53.5,38 m-3,0 a3,3.6 0,1 1,6 0 a3,3.6 0,1 1,-6 0" />
+    <path android:fillColor="#222222"
+        android:pathData="M46.8,38.6 m-1.6,0 a1.6,1.6 0,1 1,3.2 0 a1.6,1.6 0,1 1,-3.2 0 M54.3,38.6 m-1.6,0 a1.6,1.6 0,1 1,3.2 0 a1.6,1.6 0,1 1,-3.2 0" />
+    <!-- smile -->
+    <path android:strokeColor="#3A1C14" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M46,43.5 Q50,46.5 54,43.5" />
+</vector>
