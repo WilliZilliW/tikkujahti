@@ -1,0 +1,47 @@
+# Test APK from every push to main: runs the logic tests, builds a debug APK signed with the fixed test key
+# (androidApp/testiavain.keystore) and publishes it as the rolling "testi" prerelease, so the newest test
+# version always installs over the previous one from the same link.
+name: Testi-APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Testit
+        run: ./gradlew :shared:jvmTest
+      - name: Rakenna APK
+        run: ./gradlew :androidApp:assembleDebug -PtikkuBuild=${{ github.run_number }}
+      - name: Nimeä APK
+        run: cp androidApp/build/outputs/apk/debug/androidApp-debug.apk tikkujahti-testi.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tikkujahti-testi
+          path: tikkujahti-testi.apk
+      - name: Julkaise rullaava testiversio
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete testi --yes --cleanup-tag || true
+          gh release create testi tikkujahti-testi.apk \
+            --prerelease \
+            --target "${{ github.sha }}" \
+            --title "Testiversio ${{ github.run_number }}" \
+            --notes "Uusin testiversio mainista (${GITHUB_SHA::7}). Asenna puhelimeen avaamalla tikkujahti-testi.apk. Vaatii ARCorea tukevan Android-puhelimen."

@@ -42,7 +42,7 @@ class Labra(private val juuri: HTMLElement) {
     // Orbit camera
     private var kulma = 0.45
     private var kallistus = 0.22
-    private var etaisyys = 0.72
+    private var etaisyys = 0.52
     private var hidastus = 1.0
     private var edellinen = -1.0
     private val tila = el("div", "tila", juuri)

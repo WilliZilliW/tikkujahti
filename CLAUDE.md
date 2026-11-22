@@ -31,47 +31,57 @@ yarnia GitHubiin.
 ./gradlew :shared:jvmTest                 # logiikan testit
 ./gradlew :androidApp:assembleDebug       # APK: androidApp/build/outputs/apk/debug/
 ./gradlew :webApp:jsBrowserDistribution   # selainversio: webApp/build/dist/js/productionExecutable/
+node tools/kuvat.mjs                      # kuvat ukon liikkeistä → kuvat/labra-*.png (KATSO NE aina kun kosket ukkoon)
+node tools/kuvat.mjs --sivu 'index.html?kuva=1&t=9&heitto=8.6&siemen=9' peli.png   # kuva pelistä huoneessa
 ```
-Kaikki kolme rakentuivat viimeksi onnistuneesti.
+Kaikki kolme rakentuivat viimeksi onnistuneesti ja testit menivät läpi. `kuvat.mjs` käyttää kontin valmista
+Playwrightia ja Chromiumia (WebGL swiftshaderilla); ei tarvitse asentaa mitään.
 
 ## Tilanne
-Valmiina (`shared/src/commonMain/kotlin/fi/otsosoft/tikkujahti/`):
-- `matikka/V3.kt` – vektorit, `Kehys` (oikealle = eteen × ylös), apufunktiot. Maailma y ylös, metrit.
-- `matikka/Jousi.kt` – toisen kertaluvun dynamiikka (taajuus, vaimennus, ennakointi): kaikki liike kulkee
-  näiden läpi, jotta ukot eivät ole pökkelöitä.
-- `maailma/Pinta.kt` – tunnistetut pinnat monikulmioina, `Maailma`.
-- `ukko/Asento.kt`, `ukko/Ulkonako.kt` – nivelet, kasvoparametrit, mitat (~25 cm ukko), luonne, värit.
-- `ukko/Ukko.kt` – aivot ja animaatio: astuvat jalat (ei liukumista), lantion keinunta, nojaus kiihtyvyyteen,
-  kädet heiluvat jalkoja vastaan, kahden luun IK, pää ja pupillit katsovat kameraa/palloa, räpsyt, sakkadit,
-  ilmeet tunteittain. Toiminnot: SAAPUU, SEISOO, KAVELEE, JUOKSEE, KATSELEE, VILKUTTAA, RAAPII_PAATA,
-  HAUKOTTELEE, TUULETTAA, SAIKAHTAA, SUUTTUU, KIUSOITTELEE, VAISTAA_HYPPY, VAISTAA_KYYKKY, OSUMA, KAPERTYY.
-  `havaitsePallo` ennakoi lentoradan ja päättää väistöstä, `osuma` käynnistää nuken ja käpertymisen.
-  Ääniä varten `aanet`-lista (`Aantely`). Kääntyy, mutta EI OLE VIELÄ TESTATTU eikä nähty kuvana.
-- `ukko/Nukke.kt` – Verlet-ragdoll osumaan.
-- Issue #1 päivitetty päätöksillä. Testiavain `androidApp/testiavain.keystore` (salasana android), kuten Pisarassa.
+Ensimmäisen version koodi on kirjoitettu päästä päähän. Selainversio on nähty toimivan headless-Chromiumissa
+(ukot, heitto, osuma, keräys). **Android-sovellusta ja WebXR-AR-tilaa ei ole ajettu millään laitteella**: ne
+kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistettava laitteella").
 
-## Seuraavaksi (järjestyksessä)
-1. `mesh/UkkoVerkko.kt`: kiinteä topologia (indeksit kerran, joka ruudulla vain paikat+normaalit), osat
-   väreittäin: 0 keho, 1 silmänvalkuaiset+kiiltopisteet, 2 tumma (pupillit, kulmat, suu, suljetun silmän viiva),
-   3 suun sisus, 4 kieli. Raajat yhtenä putkena pyöristetyn nivelen läpi (rinnakkaissiirtokehykset), pää
-   ellipsoidi `paaVenytys`-litistyksellä, kasvot pään pinnalle `Asento.paa`-kehyksessä, piilotetut osat
-   pienennetään lähes nollaan. Kolmioiden kierto CCW ulospäin. Myös `PalloVerkko` (kaksivärinen pallo).
-2. `peli/`: pallon fysiikka (painovoima, kimpoilu pinnoista, kaarre), pyyhkäisy → heitto (`Kamera`-säde NDC:stä,
-   pieni tähtäysapu), osumatesti pallo vs. raajakapselit, `Peli` (ukot, pallot, kerätyt, tapahtumat ääniä varten).
-   Osuman jälkeen pallo pysähtyy, ukko käpertyy sisään (`pallonKeskus`), pallo lentää pelaajalle → kerätty.
-3. `aani/`: syntetisoitu siansaksa (formantit, sävelkulku tunteen mukaan) + heitto, pomppu, osuma, keräys PCM:nä.
-4. jvmTest: kävely ei liu'u, ukko pysyy lattialla, väistö toimii, osuma kerää.
-5. webApp: three.js-externals, 3D-huone + pyyhkäisyheitto, `labra.html` (napit jokaiselle toiminnolle,
-   hidastus, värit, pyöritys), WebXR AR. Tarkista ulkonäkö headless-Chromiumilla (Playwright valmiina) ja katso kuvat.
-6. androidApp: `ARSceneView(engine, scene, materialLoader, planeFindingMode, depthMode, onSessionUpdated,
-   onTouchEvent)`; ukko omana Filament-renderablena (VertexBuffer: POSITION FLOAT3 + TANGENTS FLOAT4 kvaternio,
-   päivitetään joka ruutu), materiaalit `materialLoader.createColorInstance(...)`, varjo
-   (`ShadowReceiverPlaneNode`). Lähdekoodi: lataa `arsceneview-4.66.0-sources.jar` Maven Centralista.
-   Rajaa ABI:t (arm64-v8a, armeabi-v7a), APK on nyt 48 Mt.
-7. GitHub Actions Pisaran mallilla (WilliZilliW/pisara: `apk.yml` rullaava "testi"-prerelease, `julkaisu.yml`
-   AAB tagista, salaisuudet TIKKU_UPLOAD_KEYSTORE_BASE64, TIKKU_KEYSTORE_PASSWORD, TIKKU_KEY_ALIAS,
-   TIKKU_KEY_PASSWORD; build.gradle.kts lukee TIKKU_KEYSTORE_FILE jne.) + `pages.yml` selainversiolle.
-   Gradle-ominaisuudet: `-PtikkuBuild=<ajo>` ja `-PtikkuVersion=1.2.3`. Pages pitää kytkeä päälle asetuksista.
-8. README.md suomeksi Pisaran tyyliin. Ehdota pilviympäristön asennusskriptiksi yllä oleva SDK-asennus.
+`shared/src/commonMain/kotlin/fi/otsosoft/tikkujahti/`:
+- `matikka/` – `V3`, `Kehys` (oikealle = eteen × ylos, eli (oikealle, ylos, eteen) on vasenkätinen), `Jousi`.
+- `maailma/Pinta.kt` – pinnat monikulmioina, `Maailma`. `maailma/Huone.kt` – selainversion huoneen pinnat.
+- `ukko/Ukko.kt` – aivot ja animaatio, `ukko/Nukke.kt` – ragdoll, `Asento`, `Ulkonako` (mitat, luonne, värit).
+  Ukko suosii kävelykohteita pelaajan näkökentässä (`katsojanSuunta`).
+- `mesh/Verkko.kt` – kiinteän topologian verkko osittain (materiaaleittain). `mesh/UkkoVerkko.kt` – ukko:
+  putkiraajat pyöristetyin nivelin, pää ellipsoidina, kasvot pään pinnalla (`kp(a, b, koho)`); osat KEHO,
+  VALKOINEN, TUMMA, SUU, KIELI. `PalloVerkko` – kaksivärinen pallo aaltoilevalla saumalla.
+- `peli/Heitto.kt` – `Kamera`, `Pyyhkaisy` → `Heitto` (tähtäyspiste, voima, kaarre). `peli/Pallo.kt` – fysiikka.
+  `peli/Peli.kt` – ukkojen tuonti, heitto (ballistinen kaari tähtäyspisteeseen + tähtäysapu), osumat
+  (pallon askel vs. raajakapselit), vangitseminen ja paluu, `tapahtumat` ääniä varten.
+- `aani/Syntikka.kt` – kaikki äänet PCM:nä (22050 Hz): formanttisiansaksa `Aantely`-kohtaisesti + tehosteet.
+  **Kukaan ei ole vielä kuullut näitä**: testi tarkistaa vain, että ne ovat kelvollista ääntä.
 
-Kehityshaara: `ccr-abe38453-zavzha`.
+`webApp/` (Kotlin/JS, ES-moduulit koska three.js on ESM-only): `Three.kt` (sidonnat vain käytetylle osalle),
+`Piirto.kt` (`UkkoPiirto`, `PalloPiirto`, `Nakyma`), `PeliSivu.kt` (huone + WebXR-AR hit-testillä ja
+dom-overlaylla), `Labra.kt`, `Aanet.kt` (Web Audio). Sivut `index.html`, `labra.html`, tyylit `tyyli.css`.
+
+`androidApp/`: `MainActivity.kt` (`PeliTila`, `PeliNakyma`: `ARSceneView` + Compose-HUD), `ArMaailma.kt`
+(ARCore-tasot → `Pinta`, kamera → `Kamera`; lattia = suurin ylöspäin osoittava taso alimman lähellä),
+`Piirtaja.kt` (ukot ja pallot omina Filament-renderableina suoraan `scene`en; TANGENTS-kvaterniot lasketaan
+normaaleista; puskureita kierrätetään, koska Filament lukee ne myöhemmin omassa säikeessään), `Aanet.kt`
+(AudioTrack-mikseri). SceneViewin lähteet: `arsceneview-4.66.0-sources.jar` ja `sceneview-4.66.0-sources.jar`
+Maven Centralista (`io/github/sceneview/`).
+
+`.github/workflows/`: `apk.yml`, `julkaisu.yml`, `pages.yml`. **Ne käynnistyvät `main`-haarasta, jota ei vielä
+ole** (oletushaara on vanha `ccr-abe38453-zavzha`): omistajan pitää luoda `main` ja tehdä siitä oletushaara,
+kytkeä Pages päälle (Settings → Pages → Source: GitHub Actions) ja lisätä julkaisun salaisuudet.
+
+## Tarkistettava laitteella (ei voi pilvessä)
+- Android: näkyvätkö ukot ja pallot (materiaali `createColorInstance`, TANGENTS-kvaterniot), varjo lattialla
+  (`ShadowReceiverPlane`), ukkojen koko ja paikka, kosketuksen suunta (`displayOrientedPose`), äänet.
+- WebXR: lattian asetus napauttamalla, pyyhkäisy dom-overlayn läpi, varjo (`ShadowMaterial`).
+- Heiton tuntuma (`Pyyhkaisy.lopeta`, `Peli.heita`: vauhti 3,2–7,5 m/s, `TAHTAYSAPU`, `OSUMA_APU`) ja
+  väistöjen määrä (`Luonne.vaistotaito` 0,15–0,65) ovat arvauksia: säädä palautteen mukaan.
+
+## Seuraavaksi
+1. Laitepalaute yllä olevista ja korjaukset. Äänien kuuntelu ja viritys.
+2. Issue #1:n "Ensimmäinen versio" -listan ruksit, kun omistaja on todennut kohdat laitteella.
+3. Labraan pallon heitto ukkoa kohti (väistöjen hiomiseen) ja luonteen säätimet.
+4. Depth API (piiloutuminen, osumat oikeisiin pintoihin), valon arvio selaimen AR:ään.
+5. Issue #1:n seuraavat asiat: ukkotyypit, kiipeily seinillä ja reunoilla, erikoispallot, albumi.
+6. Ehdota pilviympäristön asennusskriptiksi yllä oleva SDK-asennus.

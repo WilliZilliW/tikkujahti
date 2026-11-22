@@ -35,6 +35,10 @@ android {
         targetSdk = 36
         versionCode = tikkuVersion?.let(::versionCodeOf) ?: (tikkuBuild?.toInt() ?: 1)
         versionName = tikkuVersion ?: tikkuBuild?.let { "1.0-testi.$it" } ?: "1.0"
+        // Phones only: without the x86 libraries of Filament and ARCore the APK is much smaller
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     // Test versions (debug) are signed with a fixed key kept in the repo, so updates install over each

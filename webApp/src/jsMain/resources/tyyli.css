@@ -30,8 +30,12 @@ a { color: #3d5bd9; }
   position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 0; right: 0; text-align: center;
   font-weight: 600; opacity: .55; pointer-events: none;
 }
+/* The stage stays clear of the panel: above it on a phone, beside it on a wide screen */
+body[data-sivu="labra"] .nakyma { bottom: 46%; }
+body[data-sivu="labra"] .paneeli { height: 46%; }
 @media (min-width: 800px) {
-  .paneeli { right: auto; top: 0; width: 300px; max-height: none; }
+  body[data-sivu="labra"] .nakyma { bottom: 0; left: 300px; }
+  body[data-sivu="labra"] .paneeli { right: auto; top: 0; width: 300px; height: auto; max-height: none; }
 }
 
 /* Game */
