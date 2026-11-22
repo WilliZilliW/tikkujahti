@@ -64,7 +64,14 @@ enum class Tyyppi(
     TAVALLINEN("Tikku-ukko", "Kuljeskelee joka lattialla.", Harvinaisuus.TAVALLINEN),
     JUOKSIJA("Nopea juoksija", "Pieni vilistäjä, joka ei pysy hetkeäkään paikallaan.", Harvinaisuus.HARVINAINEN, pisteet = 3, vauhti = 1.5f),
     ISO("Iso ukko", "Niin iso, ettei yksi pallo riitä.", Harvinaisuus.HARVINAINEN, osumia = 3, pisteet = 5, vauhti = 0.75f),
-    KULTAINEN("Kultainen tikku-ukko", "Kimaltaa ja väistää melkein kaiken.", Harvinaisuus.TOSI_HARVINAINEN, pisteet = 20, vauhti = 1.2f),
+    KULTAINEN("Kultainen tikku-ukko", "Kimaltaa. Vain kultainen pallo kelpaa sille.", Harvinaisuus.TOSI_HARVINAINEN, pisteet = 20, vauhti = 1.2f),
+    KIIPEILIJA("Kiipeilijä", "Lattialla kömpelö, seinällä vikkelä.", Harvinaisuus.HARVINAINEN, pisteet = 4),
+    LASKUVARJO("Laskuvarjo-ukko", "Leijuu alas korkealta. Ehditkö osua ennen kuin se laskeutuu?", Harvinaisuus.HARVINAINEN, pisteet = 4),
+    NINJA("Ninja", "Torjuu jokaisen pallon. Tämä ukko pelkää verkkoja.", Harvinaisuus.TOSI_HARVINAINEN, pisteet = 12, vauhti = 1.4f),
+    KILPI("Kilpi-ukko", "Kilpi pysäyttää pallot edestä. Entä takaa tai pompun kautta?", Harvinaisuus.HARVINAINEN, pisteet = 6, vauhti = 0.9f),
+    PIILO("Piiloukko", "Näkymätön: vain silmät vilkkuvat. Tutka paljastaa sen.", Harvinaisuus.TOSI_HARVINAINEN, pisteet = 12),
+    LAUMA("Lauma-ukko", "Liikkuu kolmen laumassa. Yhdellä pallolla saa vain yhden, ja muut karkaavat.", Harvinaisuus.HARVINAINEN, pisteet = 3, vauhti = 1.1f),
+    KATTO("Kattoukko", "Roikkuu katossa pää alaspäin, korkealla ulottumattomissa.", Harvinaisuus.TOSI_HARVINAINEN, pisteet = 10),
 }
 
 /** Looks and personality of one stick figure. */
@@ -88,6 +95,16 @@ data class Ulkonako(
             Vari.hex(0x3D8BFF), // sininen
         )
         val KULTA = Vari.hex(0xF4BE1E)
+        val NINJA = Vari.hex(0x34323F)
+        val HAALEA = Vari.hex(0xC9D3DE)
+
+        /** The colour of each kind's accessory: shield, parachute, headband. */
+        fun varusteVari(t: Tyyppi) = when (t) {
+            Tyyppi.KILPI -> Vari.hex(0x8FA3BA)
+            Tyyppi.LASKUVARJO -> Vari.hex(0xFF7B6B)
+            Tyyppi.NINJA -> Vari.hex(0xE0304F)
+            else -> Vari.hex(0xFFFFFF)
+        }
         val SILMAVALKO = Vari.hex(0xFBFBF7)
         val TUMMA = Vari.hex(0x1D1A22)
         val SUU = Vari.hex(0x5A1E24)

@@ -101,6 +101,7 @@ external class Shape {
 }
 
 external open class Material {
+    var visible: Boolean
     var opacity: Double
     var transparent: Boolean
     val color: Color

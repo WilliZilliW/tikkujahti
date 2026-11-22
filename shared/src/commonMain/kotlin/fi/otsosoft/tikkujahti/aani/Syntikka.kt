@@ -204,6 +204,67 @@ object Syntikka {
         return normalisoi(ulos, 0.6f)
     }
 
+    /** A ball knocked aside: a short metallic clank. */
+    fun torjunta(): FloatArray = kello(floatArrayOf(520f, 1310f, 2140f, 3350f), 0.22f, 22f, 0.6f)
+
+    /** Glitter of a hidden ball: a tiny high tinkle. */
+    fun kimallus(): FloatArray = kello(floatArrayOf(2637f, 3520f, 5274f), 0.3f, 14f, 0.3f)
+
+    /** A special ball picked up: two bright notes. */
+    fun poiminta(): FloatArray {
+        val a = kello(floatArrayOf(1047f, 2094f), 0.5f, 9f, 0.55f)
+        val b = kello(floatArrayOf(1568f, 3136f), 0.4f, 8f, 0.55f)
+        val siirto = (0.1f * TAAJUUS).toInt()
+        for (i in b.indices) if (i + siirto < a.size) a[i + siirto] += b[i]
+        return normalisoi(a, 0.6f)
+    }
+
+    /** Partials ringing and dying away, like something struck. */
+    private fun kello(osat: FloatArray, kesto: Float, vaimennus: Float, voima: Float): FloatArray {
+        val n = (kesto * TAAJUUS).toInt()
+        return normalisoi(FloatArray(n) { i ->
+            val t = i / TAAJUUS.toFloat()
+            var s = 0f
+            for ((k, f) in osat.withIndex()) s += sin(2f * PI.toFloat() * f * t) * exp(-t * vaimennus * (1f + 0.5f * k)) / (1f + k)
+            s * min(1f, i / 20f) * min(1f, (n - i) / 200f)
+        }, voima)
+    }
+
+    /** The radar: a ping that sweeps up and echoes. */
+    fun tutka(): FloatArray {
+        val n = (0.7f * TAAJUUS).toInt()
+        var vaihe = 0f
+        return normalisoi(FloatArray(n) { i ->
+            val t = i / TAAJUUS.toFloat()
+            val jakso = t % 0.22f
+            vaihe += (900f + 2600f * jakso) / TAAJUUS
+            sin(2f * PI.toFloat() * vaihe) * exp(-jakso * 16f) * exp(-t * 3f) * min(1f, jakso / 0.004f) * min(1f, (n - i) / 300f)
+        }, 0.55f)
+    }
+
+    /** The slow ball: a tone that sags and wobbles to a crawl. */
+    fun hidastus(): FloatArray {
+        val n = (0.6f * TAAJUUS).toInt()
+        var vaihe = 0f
+        return normalisoi(FloatArray(n) { i ->
+            val x = i / n.toFloat()
+            vaihe += (620f * (1f - 0.75f * x) * (1f + 0.06f * sin(x * 40f))) / TAAJUUS
+            (sin(2f * PI.toFloat() * vaihe) + 0.3f * sin(4f * PI.toFloat() * vaihe)) * sin(PI.toFloat() * x.pow(0.6f))
+        }, 0.55f)
+    }
+
+    /** The sticky ball landing: a wet squelch. */
+    fun liima(): FloatArray {
+        val n = (0.25f * TAAJUUS).toInt()
+        val rnd = Random(17)
+        val suodin = Resonaattori()
+        return normalisoi(FloatArray(n) { i ->
+            val x = i / n.toFloat()
+            suodin.aseta(900f - 600f * x + 250f * sin(x * 30f), 180f)
+            suodin.aja(rnd.nextFloat() - 0.5f) * sin(PI.toFloat() * x.pow(0.4f))
+        }, 0.6f)
+    }
+
     private fun normalisoi(a: FloatArray, huippu: Float): FloatArray {
         var m = 1e-6f
         for (x in a) m = max(m, abs(x))

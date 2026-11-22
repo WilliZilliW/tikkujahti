@@ -2,6 +2,9 @@ package fi.otsosoft.tikkujahti.mesh
 
 import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.matikka.clamp
+import fi.otsosoft.tikkujahti.matikka.kohtisuora
+import fi.otsosoft.tikkujahti.matikka.lerp
+import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import fi.otsosoft.tikkujahti.matikka.saturoi
 import fi.otsosoft.tikkujahti.ukko.Asento
 import fi.otsosoft.tikkujahti.ukko.Mitat
@@ -19,12 +22,13 @@ import kotlin.math.sqrt
  * The stick figure as one soft mesh, rebuilt from an [Asento] every frame.
  *
  * Parts (materials): [KEHO] body, [VALKOINEN] eye whites and highlights, [TUMMA] pupils, brows, lips and
- * closed-eye lines, [SUU] inside of the mouth, [KIELI] tongue.
+ * closed-eye lines, [SUU] inside of the mouth, [KIELI] tongue, [VARUSTE] what the kind of figure carries: a
+ * shield, a parachute, a ninja's headband (one hidden triangle for the kinds that carry nothing).
  *
  * Limbs are tubes swept through rounded joints, so elbows and knees bend smoothly. The face is drawn on the
  * head's surface in the head's own frame.
  */
-class UkkoVerkko(private val m: Mitat) : Verkko(5) {
+class UkkoVerkko(private val m: Mitat, private val tyyppi: Tyyppi = Tyyppi.TAVALLINEN) : Verkko(6) {
 
     fun paivita(a: Asento) {
         aloita()
@@ -60,7 +64,46 @@ class UkkoVerkko(private val m: Mitat) : Verkko(5) {
         ellipsoidi(paaK, paaY, paaO, paaE, paaRy, paaRx, paaRz, 11, 18)
 
         kasvot(a)
+        varuste(a)
         valmis()
+    }
+
+    // =====================================================================================================
+    // Accessories
+    // =====================================================================================================
+
+    private fun varuste(a: Asento) {
+        osa = VARUSTE
+        val k = m.koko * a.paksuus
+        val ylos = a.ylos
+        val eteen = a.eteen.tasolle(ylos).suunta(kohtisuora(ylos))
+        val oikealle = eteen cross ylos
+        when (tyyppi) {
+            Tyyppi.KILPI -> {
+                // A round shield on the left forearm, facing the way the body faces
+                val keski = lerp(a[Nivel.KYYNARPAA_V], a[Nivel.KASI_V], 0.75f) + eteen * (0.012f * k)
+                ellipsoidi(keski, eteen, ylos, oikealle, 0.008f * k, 0.052f * k, 0.052f * k, 5, 16)
+            }
+            Tyyppi.LASKUVARJO -> {
+                // A canopy above the head with a line to each hand; it folds to nothing after landing
+                val v = a.varuste * k
+                val huippu = a[Nivel.PAA] + ylos * (0.2f * m.koko * (0.3f + 0.7f * a.varuste))
+                ellipsoidi(huippu, ylos, oikealle, eteen, 0.05f * v, 0.13f * v, 0.1f * v, 6, 16)
+                putki4(a[Nivel.KASI_V], 0.0016f * v, huippu - oikealle * (0.11f * v), 0.0016f * v, null, 0f, null, 0f)
+                putki4(a[Nivel.KASI_O], 0.0016f * v, huippu + oikealle * (0.11f * v), 0.0016f * v, null, 0f, null, 0f)
+            }
+            Tyyppi.NINJA -> {
+                // A headband: a flat disc through the head, of which only the rim shows
+                ellipsoidi(paaK + paaY * (paaRy * 0.42f), paaY, paaO, paaE, paaRy * 0.17f, paaRx * 1.0f, paaRz * 1.0f, 5, 18)
+            }
+            else -> {
+                // Nothing to carry: one collapsed triangle keeps the part from being empty
+                val i = piste(paaK.x, paaK.y, paaK.z, 0f, 1f, 0f)
+                piste(paaK.x, paaK.y, paaK.z, 0f, 1f, 0f)
+                piste(paaK.x, paaK.y, paaK.z, 0f, 1f, 0f)
+                kolmio(i, i + 1, i + 2)
+            }
+        }
     }
 
     // =====================================================================================================
@@ -488,6 +531,7 @@ class UkkoVerkko(private val m: Mitat) : Verkko(5) {
         const val TUMMA = 2
         const val SUU = 3
         const val KIELI = 4
+        const val VARUSTE = 5
 
         private const val SIVUJA = 10
         private const val KANSI = 2

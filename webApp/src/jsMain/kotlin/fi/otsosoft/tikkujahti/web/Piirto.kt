@@ -4,7 +4,14 @@ import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.mesh.PalloVerkko
 import fi.otsosoft.tikkujahti.mesh.UkkoVerkko
 import fi.otsosoft.tikkujahti.mesh.Verkko
+import fi.otsosoft.tikkujahti.matikka.pehmea
+import fi.otsosoft.tikkujahti.peli.Aarre
 import fi.otsosoft.tikkujahti.peli.Albumi
+import fi.otsosoft.tikkujahti.peli.PalloLaji
+import fi.otsosoft.tikkujahti.peli.Reppu
+import fi.otsosoft.tikkujahti.peli.Tehoste
+import kotlin.math.cos
+import kotlin.math.sin
 import fi.otsosoft.tikkujahti.peli.Pallo
 import fi.otsosoft.tikkujahti.peli.Peli
 import fi.otsosoft.tikkujahti.ukko.Tyyppi
@@ -53,12 +60,14 @@ class VerkkoGeometria(private val verkko: Verkko, muuttuva: Boolean) {
 
 /** Draws one stick figure: its mesh is rebuilt from the pose every frame. */
 class UkkoPiirto(val ukko: Ukko) {
-    private val verkko = UkkoVerkko(ukko.m)
+    private val tyyppi = ukko.ulkonako.tyyppi
+    private val verkko = UkkoVerkko(ukko.m, tyyppi)
     private val geo = VerkkoGeometria(verkko, true)
     // The golden figure gleams: smoother, and it glows a little so it stands out in any light
-    private val keho = if (ukko.ulkonako.tyyppi == Tyyppi.KULTAINEN) {
+    private val keho = if (tyyppi == Tyyppi.KULTAINEN) {
         MeshStandardMaterial(olio { color = vari(ukko.ulkonako.vari); roughness = 0.22; metalness = 0.25; emissive = vari(ukko.ulkonako.vari); emissiveIntensity = 0.22 })
     } else materiaali(ukko.ulkonako.vari, 0.55)
+    private val varuste = materiaali(Ulkonako.varusteVari(tyyppi), 0.5)
     val mesh = Mesh(
         geo.geometria,
         arrayOf(
@@ -67,6 +76,7 @@ class UkkoPiirto(val ukko: Ukko) {
             materiaali(Ulkonako.TUMMA, 0.3),
             materiaali(Ulkonako.SUU, 0.6),
             materiaali(Ulkonako.KIELI, 0.45),
+            varuste,
         ),
     )
 
@@ -76,9 +86,14 @@ class UkkoPiirto(val ukko: Ukko) {
     }
 
     fun paivita() {
-        mesh.visible = ukko.asento.nakyvissa
+        val a = ukko.asento
+        mesh.visible = a.nakyvissa
         if (!mesh.visible) return
-        verkko.paivita(ukko.asento)
+        // An invisible figure shows only its face
+        keho.visible = !a.haamu
+        varuste.visible = !a.haamu
+        mesh.castShadow = !a.haamu
+        verkko.paivita(a)
         geo.paivitetty()
     }
 
@@ -87,9 +102,17 @@ class UkkoPiirto(val ukko: Ukko) {
     }
 }
 
-/** Draws a ball. All balls share one geometry. */
-class PalloPiirto(a: Vari, b: Vari) {
-    val mesh = Mesh(yhteinen.geometria, arrayOf(materiaali(a, 0.4), materiaali(b, 0.4)))
+/** Draws a ball of some kind. All balls share one geometry. */
+class PalloPiirto(laji: PalloLaji) {
+    private val a = materiaali(laji.a, 0.4)
+    private val b = materiaali(laji.b, 0.4)
+    val mesh = Mesh(yhteinen.geometria, arrayOf(a, b))
+    var laji = laji
+        set(l) {
+            field = l
+            a.color.setRGB(l.a.r.toDouble(), l.a.g.toDouble(), l.a.b.toDouble(), "srgb")
+            b.color.setRGB(l.b.r.toDouble(), l.b.g.toDouble(), l.b.b.toDouble(), "srgb")
+        }
 
     init {
         mesh.castShadow = true
@@ -107,15 +130,29 @@ class PalloPiirto(a: Vari, b: Vari) {
     }
 
     companion object {
-        private val yhteinen by lazy { VerkkoGeometria(PalloVerkko(), false) }
+        val yhteinen by lazy { VerkkoGeometria(PalloVerkko(), false) }
         private val apu = Matrix4()
     }
 }
 
-/** Keeps the scene's figures and balls in step with a game. */
+/** A see-through glowing sphere: the glitter round a ball lying in the room, the burst of a special ball. */
+class Kupla(v: Vari) {
+    private val aine = MeshBasicMaterial(olio { color = vari(v); transparent = true; opacity = 0.2; depthWrite = false })
+    val mesh = Mesh(PalloPiirto.yhteinen.geometria, arrayOf(aine, aine))
+
+    fun aseta(p: V3, sade: Float, nakyvyys: Float) {
+        mesh.position.set(p.x.toDouble(), p.y.toDouble(), p.z.toDouble())
+        mesh.scale.set(sade.toDouble(), sade.toDouble(), sade.toDouble())
+        aine.opacity = nakyvyys.toDouble()
+    }
+}
+
+/** Keeps the scene's figures, balls and effects in step with a game. */
 class PeliPiirto(private val scene: Scene) {
     private val ukot = HashMap<Ukko, UkkoPiirto>()
     private val pallot = HashMap<Pallo, PalloPiirto>()
+    private val aarteet = HashMap<Aarre, Pair<PalloPiirto, Kupla>>()
+    private val tehosteet = HashMap<Tehoste, Kupla>()
 
     fun paivita(peli: Peli) {
         for (u in peli.ukot) ukot.getOrPut(u) { UkkoPiirto(u).also { scene.add(it.mesh) } }.paivita()
@@ -127,7 +164,7 @@ class PeliPiirto(private val scene: Scene) {
             }
         }
         for (b in peli.pallot) {
-            pallot.getOrPut(b) { PalloPiirto(PALLO_A, PALLO_B).also { scene.add(it.mesh) } }.aseta(b.p, b.sade * b.koko, b.x, b.y, b.z)
+            pallot.getOrPut(b) { PalloPiirto(b.laji).also { scene.add(it.mesh) } }.aseta(b.p, b.sade * b.koko, b.x, b.y, b.z)
         }
         val palloIt = pallot.entries.iterator()
         while (palloIt.hasNext()) {
@@ -136,17 +173,41 @@ class PeliPiirto(private val scene: Scene) {
                 scene.remove(e.value.mesh); palloIt.remove()
             }
         }
-    }
-
-    companion object {
-        val PALLO_A = Vari.hex(0xFFC93C)
-        val PALLO_B = Vari.hex(0xFFF7E6)
+        // Special balls lying about: bobbing, turning, with a pulsing glow so they catch the eye
+        for (a in peli.aarteet) {
+            val (pallo, hehku) = aarteet.getOrPut(a) {
+                (PalloPiirto(a.laji) to Kupla(a.laji.a)).also { scene.add(it.first.mesh); scene.add(it.second.mesh) }
+            }
+            val esiin = pehmea(a.ika / 0.4f) * (1f - pehmea((a.ika - Peli.AARTEEN_IKA + 1f)))
+            val p = a.paikka + V3.Y * (0.015f * sin(a.ika * 2.5f))
+            val kulma = a.ika * 1.6f
+            pallo.aseta(p, Pallo.SADE * 1.15f * esiin, V3(cos(kulma), 0f, -sin(kulma)), V3.Y, V3(sin(kulma), 0f, cos(kulma)))
+            hehku.aseta(p, (0.055f + 0.012f * sin(a.ika * 5f)) * esiin, 0.22f + 0.1f * sin(a.ika * 5f))
+        }
+        val aarreIt = aarteet.entries.iterator()
+        while (aarreIt.hasNext()) {
+            val e = aarreIt.next()
+            if (e.key !in peli.aarteet) {
+                scene.remove(e.value.first.mesh); scene.remove(e.value.second.mesh); aarreIt.remove()
+            }
+        }
+        for (t in peli.tehosteet) {
+            tehosteet.getOrPut(t) { Kupla(t.laji.a).also { scene.add(it.mesh) } }.aseta(t.paikka, t.koko, 0.3f * t.nakyvyys)
+        }
+        val tehosteIt = tehosteet.entries.iterator()
+        while (tehosteIt.hasNext()) {
+            val e = tehosteIt.next()
+            if (e.key !in peli.tehosteet) {
+                scene.remove(e.value.mesh); tehosteIt.remove()
+            }
+        }
     }
 }
 
 /** The album saved in the browser, shared by the game and the lab. */
 object Tallennus {
     private const val AVAIN = "tikkujahti.albumi"
+    private const val REPPU = "tikkujahti.reppu"
 
     fun lueAlbumi(): Albumi = try {
         Albumi.lue(window.localStorage.getItem(AVAIN))
@@ -154,9 +215,16 @@ object Tallennus {
         Albumi() // storage can be blocked; then the album just lasts for this visit
     }
 
-    fun tallenna(a: Albumi) {
+    fun lueReppu(): Reppu = try {
+        Reppu.lue(window.localStorage.getItem(REPPU))
+    } catch (e: Throwable) {
+        Reppu()
+    }
+
+    fun tallenna(a: Albumi, r: Reppu) {
         try {
             window.localStorage.setItem(AVAIN, a.teksti())
+            window.localStorage.setItem(REPPU, r.teksti())
         } catch (e: Throwable) {
         }
     }

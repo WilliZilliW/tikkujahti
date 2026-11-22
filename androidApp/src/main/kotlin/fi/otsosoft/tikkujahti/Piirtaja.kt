@@ -13,7 +13,13 @@ import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.mesh.PalloVerkko
 import fi.otsosoft.tikkujahti.mesh.UkkoVerkko
 import fi.otsosoft.tikkujahti.mesh.Verkko
+import fi.otsosoft.tikkujahti.matikka.pehmea
+import fi.otsosoft.tikkujahti.peli.Aarre
 import fi.otsosoft.tikkujahti.peli.Pallo
+import fi.otsosoft.tikkujahti.peli.PalloLaji
+import fi.otsosoft.tikkujahti.peli.Tehoste
+import kotlin.math.cos
+import kotlin.math.sin
 import fi.otsosoft.tikkujahti.peli.Peli
 import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import fi.otsosoft.tikkujahti.ukko.Ukko
@@ -94,14 +100,18 @@ private class VerkkoPuskurit(private val engine: Engine, private val verkko: Ver
     }
 }
 
-/** Draws the game's figures and balls as Filament renderables added straight to the AR scene. */
+/** Draws the game's figures, balls and effects as Filament renderables added straight to the AR scene. */
 class Piirtaja(private val engine: Engine, private val scene: Scene, private val materiaalit: MaterialLoader) {
-    private class UkkoKuva(val verkko: UkkoVerkko, val puskurit: VerkkoPuskurit, val entiteetti: Int, val keho: MaterialInstance)
+    private class UkkoKuva(val verkko: UkkoVerkko, val puskurit: VerkkoPuskurit, val entiteetti: Int, val omat: List<MaterialInstance>) {
+        var haamu = false
+    }
 
     private val ukot = HashMap<Ukko, UkkoKuva>()
     private val pallot = HashMap<Pallo, Int>()
-    private val palloPuskurit = VerkkoPuskurit(engine, PalloVerkko(), false)
+    private val aarteet = HashMap<Aarre, Pair<Int, Int>>()
+    private val tehosteet = HashMap<Tehoste, Int>()
     private val palloVerkko = PalloVerkko()
+    private val palloPuskurit = VerkkoPuskurit(engine, palloVerkko, false)
 
     private fun aine(v: Vari, karheus: Float) = materiaalit.createColorInstance(v.compose(), 0f, karheus, 0.4f)
 
@@ -109,10 +119,15 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
     private val tumma = aine(Ulkonako.TUMMA, 0.3f)
     private val suu = aine(Ulkonako.SUU, 0.6f)
     private val kieli = aine(Ulkonako.KIELI, 0.45f)
-    private val palloA = aine(PALLO_A, 0.4f)
-    private val palloB = aine(PALLO_B, 0.4f)
-    private val kasiPallo = luoPallo()
+    // Materials per kind of ball, made when first needed: the two colours, and a see-through glow
+    private val palloAineet = HashMap<PalloLaji, Pair<MaterialInstance, MaterialInstance>>()
+    private val hehkut = HashMap<PalloLaji, MaterialInstance>()
+    private var kasiLaji = PalloLaji.NORMI
+    private var kasiPallo = luoPallo(PalloLaji.NORMI)
     private val muunnos = FloatArray(16)
+
+    private fun palloAine(l: PalloLaji) = palloAineet.getOrPut(l) { aine(l.a, 0.4f) to aine(l.b, 0.4f) }
+    private fun hehku(l: PalloLaji) = hehkut.getOrPut(l) { materiaalit.createColorInstance(Color(l.a.r, l.a.g, l.a.b, 0.22f), 0f, 1f, 0f) }
 
     // A figure's vertices are already in world space, so its bounding box is set from its joints every frame:
     // the shadow map is fitted to the casters' boxes, and a loose box would smear the shadows.
@@ -125,7 +140,8 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
             if (p.x < x0) x0 = p.x; if (p.y < y0) y0 = p.y; if (p.z < z0) z0 = p.z
             if (p.x > x1) x1 = p.x; if (p.y > y1) y1 = p.y; if (p.z > z1) z1 = p.z
         }
-        val vara = u.m.paaSade * 1.6f
+        // Room for the head, and for a parachute above it
+        val vara = u.m.paaSade * (if (u.ulkonako.tyyppi == Tyyppi.LASKUVARJO) 5f else 1.6f)
         val rm = engine.renderableManager
         rm.setAxisAlignedBoundingBox(
             rm.getInstance(k.entiteetti),
@@ -134,11 +150,13 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
     }
 
     private fun luoUkko(u: Ukko): UkkoKuva {
-        val verkko = UkkoVerkko(u.m)
+        val tyyppi = u.ulkonako.tyyppi
+        val verkko = UkkoVerkko(u.m, tyyppi)
         val puskurit = VerkkoPuskurit(engine, verkko, true)
         // The golden figure gleams
-        val keho = if (u.ulkonako.tyyppi == Tyyppi.KULTAINEN) materiaalit.createColorInstance(u.ulkonako.vari.compose(), 0.35f, 0.22f, 0.6f) else aine(u.ulkonako.vari, 0.55f)
-        val aineet = arrayOf(keho, valkoinen, tumma, suu, kieli)
+        val keho = if (tyyppi == Tyyppi.KULTAINEN) materiaalit.createColorInstance(u.ulkonako.vari.compose(), 0.35f, 0.22f, 0.6f) else aine(u.ulkonako.vari, 0.55f)
+        val varuste = aine(Ulkonako.varusteVari(tyyppi), 0.5f)
+        val aineet = arrayOf(keho, valkoinen, tumma, suu, kieli, varuste)
         val e = EntityManager.get().create()
         val b = RenderableManager.Builder(verkko.osia).boundingBox(laatikko).culling(false).castShadows(true).receiveShadows(false)
         for (i in 0 until verkko.osia) {
@@ -147,21 +165,36 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
         }
         b.build(engine, e)
         scene.addEntity(e)
-        return UkkoKuva(verkko, puskurit, e, keho)
+        return UkkoKuva(verkko, puskurit, e, listOf(keho, varuste))
     }
 
-    private fun luoPallo(): Int {
-        val e = EntityManager.get().create()
-        val b = RenderableManager.Builder(2).boundingBox(Box(0f, 0f, 0f, 1f, 1f, 1f)).culling(false).castShadows(true).receiveShadows(false)
-        for (i in 0..1) {
-            b.geometry(i, RenderableManager.PrimitiveType.TRIANGLES, palloPuskurit.pisteet, palloPuskurit.indeksit, palloVerkko.osaAlku[i], palloVerkko.osaMaara[i])
-            b.material(i, if (i == 0) palloA else palloB)
+    /** An invisible figure shows only its face: the body and what it carries are drawn with no triangles. */
+    private fun asetaHaamu(k: UkkoKuva, haamu: Boolean) {
+        if (k.haamu == haamu) return
+        k.haamu = haamu
+        val rm = engine.renderableManager
+        val i = rm.getInstance(k.entiteetti)
+        for (osa in intArrayOf(UkkoVerkko.KEHO, UkkoVerkko.VARUSTE)) {
+            rm.setGeometryAt(i, osa, RenderableManager.PrimitiveType.TRIANGLES, k.puskurit.pisteet, k.puskurit.indeksit, k.verkko.osaAlku[osa], if (haamu) 0 else k.verkko.osaMaara[osa])
         }
-        b.build(engine, e)
+        rm.setCastShadows(i, !haamu)
+    }
+
+    private fun luoPallo(a: MaterialInstance, b: MaterialInstance, varjo: Boolean): Int {
+        val e = EntityManager.get().create()
+        val rb = RenderableManager.Builder(2).boundingBox(Box(0f, 0f, 0f, 1f, 1f, 1f)).culling(false).castShadows(varjo).receiveShadows(false)
+        for (i in 0..1) {
+            rb.geometry(i, RenderableManager.PrimitiveType.TRIANGLES, palloPuskurit.pisteet, palloPuskurit.indeksit, palloVerkko.osaAlku[i], palloVerkko.osaMaara[i])
+            rb.material(i, if (i == 0) a else b)
+        }
+        rb.build(engine, e)
         engine.transformManager.create(e)
         scene.addEntity(e)
         return e
     }
+
+    private fun luoPallo(l: PalloLaji) = palloAine(l).let { luoPallo(it.first, it.second, true) }
+    private fun luoKupla(l: PalloLaji) = hehku(l).let { luoPallo(it, it, false) }
 
     private fun asetaPallo(e: Int, p: V3, sade: Float, x: V3, y: V3, z: V3) {
         val m = muunnos
@@ -191,6 +224,7 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
             val k = ukot.getOrPut(u) { luoUkko(u) }
             nayta(k.entiteetti, u.asento.nakyvissa)
             if (u.asento.nakyvissa) {
+                asetaHaamu(k, u.asento.haamu)
                 k.verkko.paivita(u.asento)
                 k.puskurit.laheta()
                 rajaa(k, u)
@@ -202,12 +236,12 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
             if (e.key !in peli.ukot) {
                 poista(e.value.entiteetti)
                 e.value.puskurit.tuhoa()
-                engine.destroyMaterialInstance(e.value.keho)
+                e.value.omat.forEach { engine.destroyMaterialInstance(it) }
                 ukkoIt.remove()
             }
         }
         for (b in peli.pallot) {
-            asetaPallo(pallot.getOrPut(b) { luoPallo() }, b.p, b.sade * b.koko, b.x, b.y, b.z)
+            asetaPallo(pallot.getOrPut(b) { luoPallo(b.laji) }, b.p, b.sade * b.koko, b.x, b.y, b.z)
         }
         val palloIt = pallot.entries.iterator()
         while (palloIt.hasNext()) {
@@ -217,6 +251,38 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
                 palloIt.remove()
             }
         }
+        // Special balls lying about: bobbing, turning, with a pulsing glow so they catch the eye
+        for (a in peli.aarteet) {
+            val (pallo, kupla) = aarteet.getOrPut(a) { luoPallo(a.laji) to luoKupla(a.laji) }
+            val esiin = pehmea(a.ika / 0.4f) * (1f - pehmea(a.ika - Peli.AARTEEN_IKA + 1f))
+            val p = a.paikka + V3.Y * (0.015f * sin(a.ika * 2.5f))
+            val kulma = a.ika * 1.6f
+            asetaPallo(pallo, p, Pallo.SADE * 1.15f * esiin, V3(cos(kulma), 0f, -sin(kulma)), V3.Y, V3(sin(kulma), 0f, cos(kulma)))
+            asetaPallo(kupla, p, (0.055f + 0.012f * sin(a.ika * 5f)) * esiin, V3.X, V3.Y, V3.Z)
+        }
+        val aarreIt = aarteet.entries.iterator()
+        while (aarreIt.hasNext()) {
+            val e = aarreIt.next()
+            if (e.key !in peli.aarteet) {
+                poista(e.value.first); poista(e.value.second)
+                aarreIt.remove()
+            }
+        }
+        for (t in peli.tehosteet) asetaPallo(tehosteet.getOrPut(t) { luoKupla(t.laji) }, t.paikka, t.koko, V3.X, V3.Y, V3.Z)
+        val tehosteIt = tehosteet.entries.iterator()
+        while (tehosteIt.hasNext()) {
+            val e = tehosteIt.next()
+            if (e.key !in peli.tehosteet) {
+                poista(e.value)
+                tehosteIt.remove()
+            }
+        }
+        // The ball in the hand is the kind chosen for the next throw
+        if (kasiLaji != peli.reppu.valittu) {
+            poista(kasiPallo)
+            kasiLaji = peli.reppu.valittu
+            kasiPallo = luoPallo(kasiLaji)
+        }
         nayta(kasiPallo, kasi != null)
         if (kasi != null) asetaPallo(kasiPallo, kasi, Pallo.SADE * kadenKoko, V3.X, V3.Y, V3.Z)
     }
@@ -224,18 +290,13 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
     /** Frees everything. Call before the engine is destroyed. */
     fun tuhoa() {
         for (k in ukot.values) {
-            poista(k.entiteetti); k.puskurit.tuhoa(); engine.destroyMaterialInstance(k.keho)
+            poista(k.entiteetti); k.puskurit.tuhoa(); k.omat.forEach { engine.destroyMaterialInstance(it) }
         }
         ukot.clear()
-        for (e in pallot.values) poista(e)
-        pallot.clear()
+        for (e in pallot.values + tehosteet.values + aarteet.values.flatMap { listOf(it.first, it.second) }) poista(e)
+        pallot.clear(); tehosteet.clear(); aarteet.clear()
         poista(kasiPallo)
         palloPuskurit.tuhoa()
-        for (m in listOf(valkoinen, tumma, suu, kieli, palloA, palloB)) engine.destroyMaterialInstance(m)
-    }
-
-    companion object {
-        val PALLO_A = Vari.hex(0xFFC93C)
-        val PALLO_B = Vari.hex(0xFFF7E6)
+        for (m in listOf(valkoinen, tumma, suu, kieli) + hehkut.values + palloAineet.values.flatMap { listOf(it.first, it.second) }) engine.destroyMaterialInstance(m)
     }
 }

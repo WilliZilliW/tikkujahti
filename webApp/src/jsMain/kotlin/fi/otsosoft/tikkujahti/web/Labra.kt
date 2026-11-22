@@ -7,6 +7,7 @@ import fi.otsosoft.tikkujahti.matikka.clamp
 import fi.otsosoft.tikkujahti.matikka.Kehys
 import fi.otsosoft.tikkujahti.peli.Heitto
 import fi.otsosoft.tikkujahti.peli.Kamera
+import fi.otsosoft.tikkujahti.peli.PalloLaji
 import fi.otsosoft.tikkujahti.peli.Peli
 import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import fi.otsosoft.tikkujahti.ukko.Toiminto
@@ -49,13 +50,15 @@ class Labra(private val juuri: HTMLElement) {
     private val piirto = PeliPiirto(nakyma.scene)
     private val kamera = Kamera(V3(0f, 0.3f, 0.5f), Kehys.luo(-V3.Z), kotlin.math.tan(25.0 * PI / 180).toFloat(), 1f)
 
-    // Orbit camera
+    // Orbit camera (declared before init, which already uses these)
+    private var katsoKorkeus = 0.125
     private var kulma = 0.45
     private var kallistus = 0.22
     private var etaisyys = 0.52
     private var hidastus = 1.0
     private var edellinen = -1.0
     private val tila = el("div", "tila", juuri)
+    private var edToiminto: Toiminto? = null
 
     init {
         val lattia = Mesh(CircleGeometry(LAVAN_SADE.toDouble() + 0.04, 64), MeshStandardMaterial(olio { color = 0xf3ead8; roughness = 0.9 }))
@@ -67,6 +70,8 @@ class Labra(private val juuri: HTMLElement) {
         nakyma.scene.add(reuna)
 
         peli.ukkojaKerralla = 0
+        peli.aarteita = false
+        peli.reppu.rajaton = true
         peli.maailma.asetaPinnat(listOf(lava))
         uusiUkko()
         val p = URLSearchParams(window.location.search)
@@ -91,8 +96,6 @@ class Labra(private val juuri: HTMLElement) {
         peli.ukot += ukko
     }
 
-    private var katsoKorkeus = 0.125
-
     private fun asetaKamera() {
         val korkeus = katsoKorkeus * koko
         // Bigger figures are watched from further away, so every kind fills the stage alike
@@ -116,7 +119,10 @@ class Labra(private val juuri: HTMLElement) {
         for (t in peli.tapahtumat) aanet.soita(t, kamera.paikka)
         if (peli.ukot.isEmpty() && peli.pallot.isEmpty()) uusiUkko()
         piirto.paivita(peli)
-        tila.textContent = ukko.toiminto.name.lowercase().replace('_', ' ')
+        if (ukko.toiminto != edToiminto) {
+            edToiminto = ukko.toiminto
+            tila.textContent = ukko.toiminto.name.lowercase().replace('_', ' ')
+        }
         nakyma.piirra()
     }
 
@@ -125,6 +131,7 @@ class Labra(private val juuri: HTMLElement) {
         nakyma.sovita()
         p.get("vari")?.toIntOrNull()?.let { variIndeksi = it % Ulkonako.VARIT.size; }
         p.get("tyyppi")?.let { nimi -> Tyyppi.entries.firstOrNull { it.name == nimi } }?.let { tyyppi = it }
+        val pinta = p.get("pinta")
         siemen = p.get("siemen")?.toIntOrNull() ?: 7
         uusiUkko()
         kulma = (p.get("kulma")?.toDoubleOrNull() ?: 25.0) * PI / 180
@@ -132,6 +139,8 @@ class Labra(private val juuri: HTMLElement) {
         etaisyys = p.get("etaisyys")?.toDoubleOrNull() ?: 0.6
         katsoKorkeus = p.get("korkeus")?.toDoubleOrNull() ?: katsoKorkeus
         asetaKamera()
+        if (pinta == "seina") ukko.lattia = Pinta.suorakaide("seina", PinnanLaji.SEINA, V3(0f, 0.15f, -0.05f), V3.Z, V3.X, 0.6f, 0.3f)
+        if (pinta == "katto") ukko.lattia = Pinta.suorakaide("katto", PinnanLaji.KATTO, V3(0f, 0.3f, 0f), -V3.Y, V3.X, 0.6f, 0.6f)
         val dt = 1f / 120f
         val toiminto = p.get("toiminto")?.let { nimi -> Toiminto.entries.firstOrNull { it.name == nimi } }
         if (toiminto != Toiminto.SAAPUU) {
@@ -142,6 +151,7 @@ class Labra(private val juuri: HTMLElement) {
         repeat((t / dt).toInt()) { ukko.paivita(dt) }
         piirto.paivita(peli)
         nakyma.piirra()
+        window.asDynamic().kuvaScene = nakyma.scene // for poking at the scene from tools
         window.asDynamic().kuvaValmis = true
     }
 
@@ -173,6 +183,23 @@ class Labra(private val juuri: HTMLElement) {
         }
         val tyypit = el("div", "rivi", paneeli)
         for (t in Tyyppi.entries) nappi(tyypit, t.nimi) { tyyppi = t; uusiUkko() }
+        // Which ball "Heitä pallo" throws
+        val pallot = el("div", "rivi", paneeli)
+        val napit = ArrayList<HTMLElement>()
+        for (l in PalloLaji.entries) {
+            val n = el("button", if (l == PalloLaji.NORMI) "pallonappi valittu" else "pallonappi", pallot)
+            n.setAttribute("aria-label", l.nimi)
+            n.setAttribute("title", "${l.nimi}: ${l.kuvaus}")
+            n.style.setProperty("--a", "rgb(${(l.a.r * 255).toInt()},${(l.a.g * 255).toInt()},${(l.a.b * 255).toInt()})")
+            n.style.setProperty("--b", "rgb(${(l.b.r * 255).toInt()},${(l.b.g * 255).toInt()},${(l.b.b * 255).toInt()})")
+            napit += n
+            n.addEventListener("click", {
+                peli.reppu.valitse(l)
+                napit.forEach { it.classList.remove("valittu") }
+                n.classList.add("valittu")
+                tila.textContent = "${l.nimi}: ${l.kuvaus}"
+            })
+        }
 
         val saadot = el("div", "rivi", paneeli)
         val omat = el("label", "", saadot)

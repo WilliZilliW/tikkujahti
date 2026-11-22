@@ -46,6 +46,10 @@ class Ukko(
     alku: V3,
     alkuSuunta: Float,
     siemen: Int,
+    /** How high above the surface the figure appears; the parachutist starts high up. */
+    alkuKorkeus: Float? = null,
+    /** The surface to appear on, when it is not a floor: [alku] is then a point on it. */
+    pinta: Pinta? = null,
 ) {
     val m = ulkonako.mitat
     private val luonne = ulkonako.luonne
@@ -54,14 +58,54 @@ class Ukko(
     var osumiaJaljella = ulkonako.tyyppi.osumia
         private set
     private val rnd = Random(siemen)
+    /** The pose in the world, for drawing and hit tests. */
     val asento = Asento()
+    /** The pose in the figure's own space, where the surface it stands on is always the floor (y up). */
+    private val oma = Asento()
 
     // ---- Inputs from the game ----
     var katsoja: V3? = null
     /** Where the player is looking, if known: the figure prefers to stay in view. */
     var katsojanSuunta: V3? = null
     var pallo: V3? = null
-    var lattia: Pinta? = null
+    /**
+     * The surface the figure stands on: a floor or table top, but also a wall or a ceiling. On anything but
+     * an upward surface the figure lives in its own space where that surface is the floor, and only the
+     * finished pose is turned into the world: so everything it can do on a floor it can do on a wall.
+     */
+    var lattia: Pinta?
+        get() = pintaM
+        set(p) = asetaPinta(p)
+    /** World height of the real floor, where a knocked figure falls to. */
+    var maanTaso: Float? = null
+    private var pintaM: Pinta? = null
+    private var pintaL: Pinta? = null
+    private var alusta: Alusta? = null
+    private val katsojaL: V3? get() = katsoja?.let { paikalliseen(it) }
+    private val palloL: V3? get() = pallo?.let { paikalliseen(it) }
+    private val katsojanSuuntaL: V3? get() = katsojanSuunta?.let { alusta?.suuntaSisaan(it) ?: it }
+
+    // Blending the pose across a change of surface
+    private var siirtyma = 1f
+    private val siirtymaAlku = Array(Nivel.entries.size) { V3.NOLLA }
+    private var siirtymaPaa = Kehys(V3.Z, V3.Y, V3(-1f, 0f, 0f))
+
+    // ---- Things done to the figure ----
+    /** Seconds of being slowed down: slower, and too sluggish to dodge. */
+    var hidastettu = 0f
+        private set
+    /** Seconds of being glued to the spot. */
+    var liimattu = 0f
+        private set
+    /** Seconds an invisible figure stays revealed. */
+    var paljastettu = 0f
+        private set
+    /** An invisible figure nobody has revealed: only its eyes show, and balls pass through. */
+    val haamu: Boolean get() = tyyppi == Tyyppi.PIILO && paljastettu <= 0f && !kiinni
+    /** Figures of the same herd share a number; 0 = on its own. */
+    var ryhma = 0
+    private var poistuu = -1f
+    private var varuste = 1f
     /** When false the figure only does what it is told (the lab); when true it decides for itself. */
     var omatoiminen = true
     /** Where to curl into when caught (the ball's centre). */
@@ -77,10 +121,18 @@ class Ukko(
     val kiinni: Boolean get() = toiminto == Toiminto.OSUMA || toiminto == Toiminto.KAPERTYY
     /** Centre of the body, for aiming and hit tests. */
     val keskipiste: V3 get() = (asento[Nivel.LANTIO] + asento[Nivel.RINTA]) * 0.5f
+    /** Where the body faces, in the world. */
+    val eteen: V3 get() = maailmaanSuunta(V3.suunnasta(suunta))
+    val juuri: V3 get() = maailmaan(juuriL)
+    /** Seconds since the figure appeared. */
+    val ika: Float get() = aika
+    /** Standing on a wall or a ceiling. */
+    val seinalla: Boolean get() = alusta != null
+    /** Not walking anywhere (any more). */
+    val perilla: Boolean get() = toiminto != Toiminto.KAVELEE && toiminto != Toiminto.JUOKSEE
 
     // ---- Root motion ----
-    var juuri = alku
-        private set
+    private var juuriL = alku
     var suunta = alkuSuunta
         private set
     private var nopeus = V3.NOLLA
@@ -183,10 +235,153 @@ class Ukko(
         val f = V3.suunnasta(alkuSuunta)
         val r = f cross V3.Y
         jalat = arrayOf(Jalka(alku - r * m.lonkkaLeveys * 1.45f), Jalka(alku + r * m.lonkkaLeveys * 1.45f))
+        if (pinta != null) {
+            asetaPinta(pinta)
+            siirtyma = 1f // it appears there; there is no earlier pose to ease from
+        }
         aloita(Toiminto.SAAPUU)
-        korkeus = m.pituus * 1.1f
+        korkeus = alkuKorkeus ?: if (tyyppi == Tyyppi.LASKUVARJO) 1.5f else m.pituus * 1.1f
         ilmassa = true
+        varuste = if (tyyppi == Tyyppi.LASKUVARJO) 1f else if (tyyppi == Tyyppi.KILPI || tyyppi == Tyyppi.NINJA) 1f else 0f
         rakennaAsento(0.016f)
+        julkaise()
+    }
+
+    // =====================================================================================================
+    // Surfaces: the figure's own space
+    // =====================================================================================================
+
+    /** A surface as a frame: [y] is its normal. Own-space points are in this frame. */
+    private class Alusta(val keskus: V3, val x: V3, val y: V3, val z: V3) {
+        fun ulos(p: V3) = keskus + x * p.x + y * p.y + z * p.z
+        fun suuntaUlos(v: V3) = x * v.x + y * v.y + z * v.z
+        fun sisaan(p: V3): V3 {
+            val d = p - keskus
+            return V3(d dot x, d dot y, d dot z)
+        }
+        fun suuntaSisaan(v: V3) = V3(v dot x, v dot y, v dot z)
+    }
+
+    private fun maailmaan(p: V3) = alusta?.ulos(p) ?: p
+    private fun maailmaanSuunta(v: V3) = alusta?.suuntaUlos(v) ?: v
+    private fun paikalliseen(p: V3) = alusta?.sisaan(p) ?: p
+
+    private fun asetaPinta(p: Pinta?) {
+        if (p === pintaM || kiinni) return
+        val vaaka = p == null || (p.onVaaka && p.normaali.y > 0f)
+        val uusi = if (vaaka) null else Alusta(p!!.keskus, p.u, p.normaali, p.u cross p.normaali)
+        val vanha = alusta
+        if (vanha != null || uusi != null) {
+            // The same surface seen a little differently (AR refines planes), or a move to another surface?
+            val sama = pintaM != null && p != null && pintaM!!.id == p.id
+            val siirra = { q: V3 -> (vanha?.ulos(q) ?: q).let { w -> uusi?.sisaan(w) ?: w } }
+            if (sama) {
+                juuriL = siirra(juuriL)
+                kohde = kohde?.let(siirra)
+                for (j in jalat) {
+                    j.paikka = siirra(j.paikka); j.alku = siirra(j.alku); j.kohde = siirra(j.kohde); j.nykyinen = siirra(j.nykyinen)
+                }
+            } else {
+                for (i in siirtymaAlku.indices) siirtymaAlku[i] = asento.nivelet[i]
+                siirtymaPaa = asento.paa
+                siirtyma = 0f
+                val eteenM = vanha?.suuntaUlos(V3.suunnasta(suunta)) ?: V3.suunnasta(suunta)
+                val ylosM = vanha?.y ?: V3.Y
+                juuriL = siirra(juuriL)
+                if (uusi != null) juuriL = V3(juuriL.x, 0f, juuriL.z)
+                // Keep heading the same way along the new surface; walking straight at it means going "up" the old one
+                var s = (uusi?.suuntaSisaan(eteenM) ?: eteenM).vaakaan()
+                if (s.pituus < 0.35f) s = (uusi?.suuntaSisaan(ylosM) ?: ylosM).vaakaan()
+                suunta = suuntakulma(s.suunta(V3.Z))
+                val r = V3.suunnasta(suunta) cross V3.Y
+                jalat[0].paikka = juuriL - r * (m.lonkkaLeveys * 1.45f)
+                jalat[1].paikka = juuriL + r * (m.lonkkaLeveys * 1.45f)
+                for (j in jalat) {
+                    j.askel = false; j.nykyinen = j.paikka; j.alku = j.paikka; j.kohde = j.paikka
+                }
+                kohde = null
+                nopeus = V3.NOLLA; edNopeus = V3.NOLLA
+                korkeus = 0f; pystyNopeus = 0f; ilmassa = false
+                katse.nollaa(V3.suunnasta(suunta)); noja.nollaa(V3.NOLLA)
+                kasiV.nollaa(siirra(kasiV.arvo)); kasiO.nollaa(siirra(kasiO.arvo))
+                odottavaVaisto = null
+            }
+        }
+        alusta = uusi
+        pintaM = p
+        pintaL = if (uusi == null) p else Pinta(p!!.id, p.laji, V3.NOLLA, V3.Y, V3.X, p.reuna)
+    }
+
+    /** Turns the own-space pose into the world pose, easing across a change of surface. */
+    private fun julkaise() {
+        val a = alusta
+        val t = pehmea(siirtyma)
+        for (i in oma.nivelet.indices) {
+            val w = a?.ulos(oma.nivelet[i]) ?: oma.nivelet[i]
+            asento.nivelet[i] = if (siirtyma < 1f) lerp(siirtymaAlku[i], w, t) else w
+        }
+        var e = a?.suuntaUlos(oma.paa.eteen) ?: oma.paa.eteen
+        var y = a?.suuntaUlos(oma.paa.ylos) ?: oma.paa.ylos
+        if (siirtyma < 1f) {
+            e = lerp(siirtymaPaa.eteen, e, t); y = lerp(siirtymaPaa.ylos, y, t)
+        }
+        asento.paa = if (a == null && siirtyma >= 1f) oma.paa else Kehys.luo(e, y)
+        asento.paaVenytys = oma.paaVenytys
+        asento.paksuus = oma.paksuus
+        asento.nakyvissa = oma.nakyvissa
+        asento.kasvot.kopioi(oma.kasvot)
+        asento.varuste = varuste
+        asento.haamu = haamu
+        asento.eteen = eteen
+        asento.ylos = a?.y ?: V3.Y
+    }
+
+    // =====================================================================================================
+    // Things the game does to the figure
+    // =====================================================================================================
+
+    fun hidasta(sekunteja: Float) {
+        hidastettu = max(hidastettu, sekunteja)
+    }
+
+    fun liimaa(sekunteja: Float) {
+        liimattu = max(liimattu, sekunteja)
+        odottavaVaisto = null
+        if (!kiinni && !ilmassa) aloita(Toiminto.SAIKAHTAA)
+    }
+
+    fun paljasta(sekunteja: Float) {
+        if (tyyppi == Tyyppi.PIILO && paljastettu <= 0f && !kiinni) {
+            aanet += Aantely.IIK
+            if (!ilmassa) aloita(Toiminto.SAIKAHTAA)
+        }
+        paljastettu = max(paljastettu, sekunteja)
+    }
+
+    /** Walks or runs to a point in the world (on the surface the figure is on). */
+    fun meneKohti(p: V3, juosten: Boolean) {
+        if (kiinni || valmis) return
+        val l = paikalliseen(p)
+        kohde = V3(l.x, juuriL.y, l.z)
+        aloita(if (juosten) Toiminto.JUOKSEE else Toiminto.KAVELEE)
+    }
+
+    /** Runs off towards [pois] and vanishes: the rest of a herd when one of them is caught. */
+    fun pakene(pois: V3) {
+        if (kiinni || valmis || poistuu >= 0f) return
+        poistuu = 0f
+        omatoiminen = false
+        aanet += Aantely.IIK
+        meneKohti(pois, true)
+    }
+
+    /** A ball bounced off: the wrong kind of ball, or a shield in the way. The figure gloats. */
+    fun torju() {
+        if (kiinni || valmis) return
+        odottavaVaisto = null
+        seuraavaLahelta = -1f
+        venytys.tyonna(1.5f)
+        if (!ilmassa) aloita(if (rnd.nextFloat() < 0.5f) Toiminto.KIUSOITTELEE else Toiminto.TUULETTAA)
     }
 
     // =====================================================================================================
@@ -203,13 +398,13 @@ class Ukko(
             }
             Toiminto.KAVELEE, Toiminto.JUOKSEE -> kohde = uusiKohde(if (t == Toiminto.JUOKSEE) 0.6f else 0.35f)
             Toiminto.OSUMA -> {
-                val kohti = (katsoja ?: (juuri + V3.suunnasta(suunta) * 1f)) - keskipiste
+                val kohti = (katsoja ?: (juuri + eteen)) - keskipiste
                 osuma(keskipiste, -kohti.suunta() * 4f)
                 return
             }
             Toiminto.KAPERTYY -> {
-                if (pallonKeskus == null) pallonKeskus = keskipiste + V3.suunnasta(suunta) * 0.05f
-                osuma(keskipiste, V3.suunnasta(suunta) * -1.5f)
+                if (pallonKeskus == null) pallonKeskus = keskipiste + eteen * 0.05f
+                osuma(keskipiste, eteen * -1.5f)
                 return
             }
             else -> {}
@@ -237,12 +432,21 @@ class Ukko(
     /** A ball hit the figure at [kohta] moving at [pallonNopeus]: it gets knocked, then curls into the ball. */
     fun osuma(kohta: V3, pallonNopeus: V3) {
         if (kiinni || valmis) return
+        val omaNopeus = maailmaanSuunta(nopeus)
         val alkuNopeus = Array(Nivel.entries.size) { i ->
             val p = asento.nivelet[i]
             val lahella = 1f - saturoi((p - kohta).pituus / (m.pituus * 0.7f))
-            nopeus + pallonNopeus * (0.25f + 0.35f * lahella) + V3.Y * 0.4f
+            omaNopeus + pallonNopeus * (0.25f + 0.35f * lahella) + V3.Y * 0.4f
         }
         nukke = Nukke(asento.nivelet.copyOf(), alkuNopeus, m)
+        // From here on physics has the figure, in the world: it lets go of any wall or ceiling and falls
+        if (alusta != null) {
+            if (alusta!!.y.y < -0.5f) nukke?.katto = alusta!!.keskus.y
+            juuriL = juuri
+            oma.paa = asento.paa
+            alusta = null; pintaM = null; pintaL = null
+        }
+        siirtyma = 1f
         aanet += if (rnd.nextFloat() < 0.5f) Aantely.AH else Aantely.HUPS
         aloita(Toiminto.OSUMA)
     }
@@ -251,9 +455,12 @@ class Ukko(
      * Tells the figure about a ball in flight (position [p], velocity [v], gravity [g], radius [sade]).
      * Each ball is judged once: the figure may decide to dodge it, or just watch it fly past.
      */
-    fun havaitsePallo(id: Int, p: V3, v: V3, g: V3, sade: Float) {
+    fun havaitsePallo(id: Int, p0: V3, v0: V3, g0: V3, sade: Float, vaistettavissa: Boolean = true) {
         if (id in ennakoidut || kiinni || valmis) return
-        val keski = juuri + V3.Y * (m.pituus * 0.5f)
+        val p = paikalliseen(p0)
+        val v = alusta?.suuntaSisaan(v0) ?: v0
+        val g = alusta?.suuntaSisaan(g0) ?: g0
+        val keski = juuriL + V3.Y * (m.pituus * 0.5f)
         var lahin = Float.MAX_VALUE
         var lahinT = 0f
         var lahinPiste = p
@@ -264,15 +471,16 @@ class Ukko(
             if (d < lahin) {
                 lahin = d; lahinT = t; lahinPiste = q
             }
-            if (q.y < juuri.y - 0.2f) break
+            if (q.y < juuriL.y - 0.2f) break
             t += 0.02f
         }
         if (lahin > 0.9f && t < 1.2f) return // far away, judge it again later
         ennakoidut += id
         val uhkaava = lahin < m.pituus * 0.5f + sade
         val reaktio = 0.14f + rnd.nextFloat() * 0.12f
-        if (uhkaava && lahinT > reaktio && !ilmassa && rnd.nextFloat() < luonne.vaistotaito) {
-            val korkea = lahinPiste.y - juuri.y > m.pituus * 0.62f
+        val pystyy = vaistettavissa && liimattu <= 0f && hidastettu <= 0f
+        if (uhkaava && pystyy && lahinT > reaktio && !ilmassa && rnd.nextFloat() < luonne.vaistotaito) {
+            val korkea = lahinPiste.y - juuriL.y > m.pituus * 0.62f
             if (korkea) {
                 odottavaVaisto = Toiminto.VAISTAA_KYYKKY
             } else {
@@ -316,9 +524,13 @@ class Ukko(
             }
         }
 
+        hidastettu -= dt; liimattu -= dt; paljastettu -= dt
+        if (siirtyma < 1f) siirtyma = min(1f, siirtyma + dt / 0.32f)
+
         if (kiinni) {
             paivitaKiinni(dt)
             paivitaKasvot(dt)
+            julkaise()
             return
         }
 
@@ -327,6 +539,18 @@ class Ukko(
         liiku(dt)
         rakennaAsento(dt)
         paivitaKasvot(dt)
+        // The parachute folds away after landing
+        if (tyyppi == Tyyppi.LASKUVARJO && !ilmassa) varuste = max(0f, varuste - dt / 0.5f)
+        // A fleeing figure runs for a moment, then shrinks away
+        if (poistuu >= 0f) {
+            poistuu += dt
+            if (poistuu > 1.6f) oma.paksuus = max(0.02f, 1f - (poistuu - 1.6f) / 0.3f)
+            if (poistuu > 1.9f) {
+                oma.nakyvissa = false
+                valmis = true
+            }
+        }
+        julkaise()
     }
 
     private fun aloita(t: Toiminto) {
@@ -392,7 +616,7 @@ class Ukko(
     }
 
     private fun valitseOmaToiminto() {
-        val katsojaLahella = katsoja?.let { (it.vaakaan() - juuri.vaakaan()).pituus < 2.2f } ?: false
+        val katsojaLahella = katsojaL?.let { (it.vaakaan() - juuriL.vaakaan()).pituus < 2.2f } ?: false
         val r = rnd.nextFloat()
         when {
             tyyppi == Tyyppi.JUOKSIJA && r < 0.85f -> {
@@ -414,20 +638,20 @@ class Ukko(
 
     /** A new place to walk to: on the floor, in view of the player, not too close to them. */
     private fun uusiKohde(matka: Float): V3 {
-        val l = lattia
+        val l = pintaL
         var paras: V3? = null
         var parasPisteet = -Float.MAX_VALUE
         repeat(12) {
             val kulma = rnd.nextFloat() * 2f * PI.toFloat()
             val pituus = matka * (0.5f + rnd.nextFloat())
-            var p = juuri + V3.suunnasta(kulma) * pituus
+            var p = juuriL + V3.suunnasta(kulma) * pituus
             if (l != null) p = l.lahinPiste(p, 0.06f)
             var pisteet = 0f
-            katsoja?.let { k ->
+            katsojaL?.let { k ->
                 val d = (p.vaakaan() - k.vaakaan()).pituus
                 val toivottu = 0.9f + luonne.ujous * 1.0f
                 pisteet -= abs(d - toivottu)
-                katsojanSuunta?.let { s ->
+                katsojanSuuntaL?.let { s ->
                     val sivussa = fi.otsosoft.tikkujahti.matikka.kulmaValilla(s.vaakaan().suunta(V3.Z), (p - k).vaakaan().suunta(V3.Z))
                     pisteet -= max(0f, sivussa - 0.15f) * 2.5f
                 }
@@ -437,7 +661,7 @@ class Ukko(
                 parasPisteet = pisteet; paras = p
             }
         }
-        return paras ?: juuri
+        return paras ?: juuriL
     }
 
     // =====================================================================================================
@@ -449,10 +673,10 @@ class Ukko(
         val f = V3.suunnasta(suunta)
         val r = f cross V3.Y
         val ylos = V3.Y
-        val paaKeski = asento[Nivel.PAA]
-        val olkaV = asento[Nivel.OLKA_V]
-        val olkaO = asento[Nivel.OLKA_O]
-        val kamera = katsoja
+        val paaKeski = oma[Nivel.PAA]
+        val olkaV = oma[Nivel.OLKA_V]
+        val olkaO = oma[Nivel.OLKA_O]
+        val kamera = katsojaL
 
         // Default gaze: the player now and then, otherwise ahead or around
         vilkaisuAjastin -= dt
@@ -460,7 +684,7 @@ class Ukko(
             vilkaisuAjastin = 1.2f + rnd.nextFloat() * 2.5f
             katseKohde = when {
                 kamera != null && rnd.nextFloat() < 0.55f -> null // null = look at the player
-                else -> juuri + V3.suunnasta(suunta + (rnd.nextFloat() - 0.5f) * 2.4f) * 1f + ylos * (rnd.nextFloat() * 0.3f)
+                else -> juuriL + V3.suunnasta(suunta + (rnd.nextFloat() - 0.5f) * 2.4f) * 1f + ylos * (rnd.nextFloat() * 0.3f)
             }
         }
         o.katse = katseKohde ?: kamera
@@ -469,6 +693,15 @@ class Ukko(
             Toiminto.SAAPUU -> {
                 o.tunne = if (t < 0.6f) Tunne.YLLATTYNYT else Tunne.ILOINEN
                 o.katse = kamera
+                if (tyyppi == Tyyppi.LASKUVARJO && ilmassa) {
+                    // Hanging from the parachute lines, swinging gently
+                    o.tunne = Tunne.ILOINEN
+                    toimintoKesto = t + 1.2f
+                    val heilu = sin(aika * 2.2f)
+                    o.kasiV = olkaV + ylos * (m.kadenPituus * 0.8f) - r * (m.kadenPituus * 0.45f)
+                    o.kasiO = olkaO + ylos * (m.kadenPituus * 0.8f) + r * (m.kadenPituus * 0.45f)
+                    o.noja = r * (0.12f * heilu)
+                }
                 if (!ilmassa && t > 0.25f) o.kallistus = 0.25f * sin(t * 5f) * (1f - saturoi((t - 0.6f) / 0.8f))
             }
             Toiminto.SEISOO -> {
@@ -479,10 +712,14 @@ class Ukko(
                 val juoksee = toiminto == Toiminto.JUOKSEE
                 o.kohde = kohde
                 o.vauhti = (if (juoksee) 0.55f else 0.22f) * (0.8f + luonne.vilkkaus * 0.4f) * tyyppi.vauhti
+                // The climber is quick on walls and clumsy on the floor
+                if (tyyppi == Tyyppi.KIIPEILIJA) o.vauhti *= if (alusta != null) 1.6f else 0.55f
+                if (hidastettu > 0f) o.vauhti *= 0.3f
+                if (liimattu > 0f) o.vauhti = 0f
                 o.tunne = if (juoksee) Tunne.ILOINEN else Tunne.NEUTRAALI
-                if (katseKohde != null) o.katse = juuri + f * 1f + ylos * 0.05f
+                if (katseKohde != null) o.katse = juuriL + f * 1f + ylos * 0.05f
                 val k = kohde
-                if (k == null || (k - juuri).vaakaan().pituus < 0.03f) {
+                if (k == null || (k - juuriL).vaakaan().pituus < 0.03f) {
                     valmiina(); return
                 }
             }
@@ -506,7 +743,7 @@ class Ukko(
             }
             Toiminto.RAAPII_PAATA -> {
                 o.tunne = Tunne.MIETTELIAS
-                val h = asento.paa
+                val h = oma.paa
                 val raapi = sin(t * 2f * PI.toFloat() * 4f) * 0.25f
                 if (t > 0.15f && t < toimintoKesto - 0.3f) {
                     o.kasiO = paaKeski + h.oikealle * (m.paaSade * 0.95f) + h.ylos * (m.paaSade * (0.55f + raapi)) - h.eteen * (m.paaSade * 0.15f)
@@ -537,7 +774,7 @@ class Ukko(
                 val pumppu = sin(t * 2f * PI.toFloat() * 2.4f)
                 if (t < 1.55f) {
                     o.kasiO = olkaO + ylos * (m.kadenPituus * (0.62f + 0.25f * pumppu)) + r * (m.kadenPituus * 0.45f) + f * 0.008f
-                    o.kasiV = asento[Nivel.LONKKA_V] - r * (m.lonkkaLeveys * 1.8f) + f * 0.004f + ylos * 0.006f
+                    o.kasiV = oma[Nivel.LONKKA_V] - r * (m.lonkkaLeveys * 1.8f) + f * 0.004f + ylos * 0.006f
                     o.kasiJousi = 2.0f
                 }
                 if (toisto == 0 && t > 0.12f) {
@@ -549,7 +786,7 @@ class Ukko(
             }
             Toiminto.SAIKAHTAA -> {
                 o.tunne = if (t < 0.6f) Tunne.YLLATTYNYT else Tunne.PELOKAS
-                o.katse = pallo ?: kamera
+                o.katse = palloL ?: kamera
                 if (toisto == 0) {
                     toisto = 1; hyppaa(0.022f * m.koko, V3.NOLLA)
                 }
@@ -568,8 +805,8 @@ class Ukko(
                 kamera?.let { o.kaanny = it }
                 o.suuAuki = 0.25f + 0.15f * sin(t * 18f)
                 val tarina = sin(t * 40f) * 0.0025f
-                o.kasiV = asento[Nivel.LONKKA_V] - r * (m.lonkkaLeveys * 2.2f) + ylos * (0.01f + tarina)
-                o.kasiO = asento[Nivel.LONKKA_O] + r * (m.lonkkaLeveys * 2.2f) + ylos * (0.01f - tarina)
+                o.kasiV = oma[Nivel.LONKKA_V] - r * (m.lonkkaLeveys * 2.2f) + ylos * (0.01f + tarina)
+                o.kasiO = oma[Nivel.LONKKA_O] + r * (m.lonkkaLeveys * 2.2f) + ylos * (0.01f - tarina)
                 o.kasiJousi = 2.5f
                 o.noja = f * 0.12f
                 o.askelNosto = 3.2f
@@ -584,7 +821,7 @@ class Ukko(
                 o.tunne = Tunne.KIUSOITTELEVA
                 o.katse = kamera
                 kamera?.let { o.kaanny = it }
-                val h = asento.paa
+                val h = oma.paa
                 val heilu = sin(t * 2f * PI.toFloat() * 1.6f)
                 val sormet = sin(t * 2f * PI.toFloat() * 6f) * 0.004f
                 if (t > 0.1f && t < toimintoKesto - 0.25f) {
@@ -598,7 +835,7 @@ class Ukko(
             }
             Toiminto.VAISTAA_HYPPY -> {
                 o.tunne = Tunne.YLLATTYNYT
-                o.katse = pallo ?: kamera
+                o.katse = palloL ?: kamera
                 if (t < 0.07f) {
                     o.kyykky = 0.7f
                 } else if (toisto == 0) {
@@ -622,15 +859,26 @@ class Ukko(
                 o.kyykky = 1f * alas
                 o.silmatKiinni = alas > 0.5f
                 if (alas > 0.1f) {
-                    val h = asento.paa
+                    val h = oma.paa
                     o.kasiV = paaKeski + h.ylos * (m.paaSade * 1.05f) - h.oikealle * (m.paaSade * 0.5f)
                     o.kasiO = paaKeski + h.ylos * (m.paaSade * 1.05f) + h.oikealle * (m.paaSade * 0.5f)
                     o.kasiJousi = 2.8f
                 }
                 o.noja = f * (0.35f * alas)
-                o.katse = juuri + f * 0.3f
+                o.katse = juuriL + f * 0.3f
             }
             Toiminto.OSUMA, Toiminto.KAPERTYY -> {}
+        }
+
+        // The shield stays up in front unless the hands are busy
+        if (tyyppi == Tyyppi.KILPI && o.kasiV == null && toiminto != Toiminto.SAAPUU) {
+            o.kasiV = olkaV + f * (m.kadenPituus * 0.65f) + r * (m.olkaLeveys * 0.5f) - ylos * (m.kadenPituus * 0.42f)
+        }
+        // Under a ceiling the arms dangle towards the room
+        if ((alusta?.y?.y ?: 1f) < -0.5f) {
+            val heilu = sin(aika * 1.7f) * 0.012f
+            if (o.kasiV == null) o.kasiV = olkaV + ylos * (m.kadenPituus * 0.92f) - r * (0.012f + heilu)
+            if (o.kasiO == null) o.kasiO = olkaO + ylos * (m.kadenPituus * 0.92f) + r * (0.012f - heilu)
         }
 
         if (toimintoAika >= toimintoKesto && !(toiminto in VAISTOT && ilmassa)) valmiina()
@@ -641,7 +889,7 @@ class Ukko(
     // =====================================================================================================
 
     private fun hyppaa(h: Float, vaaka: V3) {
-        if (ilmassa) return
+        if (ilmassa || liimattu > 0f) return
         ilmassa = true
         pystyNopeus = sqrt(2f * PAINOVOIMA * h)
         nopeus = vaaka
@@ -669,7 +917,7 @@ class Ukko(
         val k = o.kohde
         if (!ilmassa) {
             if (k != null && o.vauhti > 0f) {
-                val ero = (k - juuri).vaakaan()
+                val ero = (k - juuriL).vaakaan()
                 val d = ero.pituus
                 val haluttu = ero.suunta(f) * (o.vauhti * saturoi(d / 0.1f + 0.15f))
                 val kulma = kulmaero(suunta, suuntakulma(haluttu))
@@ -680,7 +928,7 @@ class Ukko(
             } else {
                 nopeus = lahesty(nopeus, V3.NOLLA, 2.2f * dt)
                 o.kaanny?.let { kohti ->
-                    val kulma = kulmaero(suunta, suuntakulma((kohti - juuri).vaakaan()))
+                    val kulma = kulmaero(suunta, suuntakulma((kohti - juuriL).vaakaan()))
                     if (abs(kulma) > 0.6f || (toiminto != Toiminto.SEISOO && abs(kulma) > 0.15f)) {
                         suunta += clamp(kulma, -2.2f * dt, 2.2f * dt)
                     }
@@ -688,6 +936,7 @@ class Ukko(
             }
         } else {
             pystyNopeus -= PAINOVOIMA * dt
+            if (tyyppi == Tyyppi.LASKUVARJO && varuste > 0.5f) pystyNopeus = max(pystyNopeus, -0.3f)
             korkeus += pystyNopeus * dt
             if (korkeus <= 0f && pystyNopeus < 0f) {
                 // Landing: squash, bend the knees, and plant both feet where they are
@@ -699,24 +948,24 @@ class Ukko(
                 venytys.tyonna(-isku * 4f)
                 nopeus = nopeus * 0.3f
                 val r = f cross V3.Y
-                jalat[0].paikka = juuri + nopeus * 0.05f - r * (m.lonkkaLeveys * 1.5f)
-                jalat[1].paikka = juuri + nopeus * 0.05f + r * (m.lonkkaLeveys * 1.5f)
+                jalat[0].paikka = juuriL + nopeus * 0.05f - r * (m.lonkkaLeveys * 1.5f)
+                jalat[1].paikka = juuriL + nopeus * 0.05f + r * (m.lonkkaLeveys * 1.5f)
                 jalat.forEach { it.askel = false; it.maassa = 0f }
                 aanet += Aantely.ALASTULO
             }
         }
 
-        juuri += nopeus * dt
+        juuriL += nopeus * dt
         // Stay on the floor
-        lattia?.let { l ->
-            if (!l.sisalla(juuri, -0.03f)) {
-                val p = l.lahinPiste(juuri, 0.04f)
-                val siirto = p - juuri
-                juuri = p
+        pintaL?.let { l ->
+            if (!l.sisalla(juuriL, -0.03f)) {
+                val p = l.lahinPiste(juuriL, 0.04f)
+                val siirto = p - juuriL
+                juuriL = p
                 val n = siirto.suunta(V3.NOLLA)
                 if (n != V3.NOLLA) nopeus = nopeus - n * min(0f, nopeus dot n)
             }
-            juuri = V3(juuri.x, l.keskus.y, juuri.z)
+            juuriL = V3(juuriL.x, l.keskus.y, juuriL.z)
         }
 
         paivitaJalat(dt)
@@ -735,7 +984,7 @@ class Ukko(
         val kesto = clamp(0.23f - vauhti * 0.22f, 0.1f, 0.23f)
         for ((i, j) in jalat.withIndex()) {
             val puoli = if (i == 0) -1f else 1f
-            val ihanne = juuri + r * (puoli * m.lonkkaLeveys * 1.45f) + nopeus * (kesto * 0.9f)
+            val ihanne = juuriL + r * (puoli * m.lonkkaLeveys * 1.45f) + nopeus * (kesto * 0.9f)
             if (ilmassa) {
                 j.askel = false
                 j.paikka = ihanne
@@ -766,7 +1015,7 @@ class Ukko(
             var parasEro = kynnys
             for ((i, j) in jalat.withIndex()) {
                 val puoli = if (i == 0) -1f else 1f
-                val ihanne = juuri + r * (puoli * m.lonkkaLeveys * 1.45f) + nopeus * (kesto * 0.9f)
+                val ihanne = juuriL + r * (puoli * m.lonkkaLeveys * 1.45f) + nopeus * (kesto * 0.9f)
                 val ero = (j.paikka - ihanne).vaakaan().pituus
                 if (ero > parasEro && j.maassa > 0.03f) {
                     parasEro = ero; paras = i
@@ -808,13 +1057,13 @@ class Ukko(
                 if (j.askel) {
                     bob += amp * kumpu(j.t) - amp * 0.35f
                     val toinen = jalat[1 - i]
-                    sivu += ((toinen.paikka - juuri) dot r) * 0.28f * kumpu(j.t)
+                    sivu += ((toinen.paikka - juuriL) dot r) * 0.28f * kumpu(j.t)
                 }
             }
         }
         val hengitys = sin(aika * 2f * PI.toFloat() * 0.3f) * 0.0011f * m.koko
 
-        var lantio = juuri + ylos * (m.lantioSeisten * (1f - 0.42f * clamp(kyy, -0.3f, 1.2f)) + bob + korkeus) + r * sivu
+        var lantio = juuriL + ylos * (m.lantioSeisten * (1f - 0.42f * clamp(kyy, -0.3f, 1.2f)) + bob + korkeus) + r * sivu
 
         // Keep planted legs from overstretching: lower the pelvis instead
         if (!ilmassa) {
@@ -840,19 +1089,19 @@ class Ukko(
         val selka = (ylos + nojaNyt.vaakaan()).suunta()
 
         // Hips and shoulders counter-rotate with the steps
-        val etuV = (jalat[0].nykyinen - juuri) dot f
-        val etuO = (jalat[1].nykyinen - juuri) dot f
+        val etuV = (jalat[0].nykyinen - juuriL) dot f
+        val etuO = (jalat[1].nykyinen - juuriL) dot f
         val kierto = clamp((etuV - etuO) / (0.06f * m.koko), -1f, 1f) * 0.28f
         val lonkkaSuunta = kierra(r, ylos, kierto * 0.7f)
         val olkaSuunta = kierra(r, selka, -kierto)
 
         val rinta = lantio + selka * (m.vartalo + hengitys)
-        asento[Nivel.LANTIO] = lantio
-        asento[Nivel.RINTA] = rinta
-        asento[Nivel.LONKKA_V] = lantio - lonkkaSuunta * m.lonkkaLeveys
-        asento[Nivel.LONKKA_O] = lantio + lonkkaSuunta * m.lonkkaLeveys
-        asento[Nivel.OLKA_V] = rinta - olkaSuunta * m.olkaLeveys - selka * (0.004f * m.koko)
-        asento[Nivel.OLKA_O] = rinta + olkaSuunta * m.olkaLeveys - selka * (0.004f * m.koko)
+        oma[Nivel.LANTIO] = lantio
+        oma[Nivel.RINTA] = rinta
+        oma[Nivel.LONKKA_V] = lantio - lonkkaSuunta * m.lonkkaLeveys
+        oma[Nivel.LONKKA_O] = lantio + lonkkaSuunta * m.lonkkaLeveys
+        oma[Nivel.OLKA_V] = rinta - olkaSuunta * m.olkaLeveys - selka * (0.004f * m.koko)
+        oma[Nivel.OLKA_O] = rinta + olkaSuunta * m.olkaLeveys - selka * (0.004f * m.koko)
 
         // Head: turns towards what it looks at (within the neck's reach), tilts, and squashes on landings
         val katsePaikka = o.katse ?: (rinta + f * 1f)
@@ -865,19 +1114,19 @@ class Ukko(
         val paaKehys0 = Kehys.luo(katseNyt, selka)
         val paaYlos = kierra(paaKehys0.ylos, paaKehys0.eteen, kallistusNyt)
         val paaKehys = Kehys.ylosta(paaYlos, katseNyt)
-        asento.paa = paaKehys
-        asento.paaVenytys = clamp(venytys.paivita(dt, 1f), 0.72f, 1.3f)
+        oma.paa = paaKehys
+        oma.paaVenytys = clamp(venytys.paivita(dt, 1f), 0.72f, 1.3f)
         val niska = rinta + selka * (0.002f * m.koko)
-        asento[Nivel.NISKA] = niska
+        oma[Nivel.NISKA] = niska
         val kaulaSuunta = (paaKehys.ylos * 0.6f + selka * 0.4f).suunta()
-        asento[Nivel.PAA] = niska + kaulaSuunta * (m.kaula + m.paaSade * 0.88f * asento.paaVenytys)
+        oma[Nivel.PAA] = niska + kaulaSuunta * (m.kaula + m.paaSade * 0.88f * oma.paaVenytys)
 
         // Arms: natural swing opposite to the legs, blended with the action's hand targets
         val swingV = -(etuV - etuO) * 0.85f
         val juoksuNosto = saturoi((vauhti - 0.3f) / 0.3f)
         for (puoli in 0..1) {
             val s = if (puoli == 0) -1f else 1f
-            val olka = if (puoli == 0) asento[Nivel.OLKA_V] else asento[Nivel.OLKA_O]
+            val olka = if (puoli == 0) oma[Nivel.OLKA_V] else oma[Nivel.OLKA_O]
             val swing = if (puoli == 0) swingV else -swingV
             val oletus = olka - ylos * (m.kadenPituus * (0.93f - 0.3f * juoksuNosto)) +
                 f * (swing + 0.008f * m.koko + juoksuNosto * 0.012f * m.koko) +
@@ -894,16 +1143,16 @@ class Ukko(
             val kyynarpaa = kaksiLuuta(olka, kasi, m.olkavarsi, m.kyynarvarsi, napa)
             val kasiTodellinen = kyynarpaa + (kasi - kyynarpaa).suunta(-ylos) * m.kyynarvarsi
             if (puoli == 0) {
-                asento[Nivel.KYYNARPAA_V] = kyynarpaa; asento[Nivel.KASI_V] = kasiTodellinen
+                oma[Nivel.KYYNARPAA_V] = kyynarpaa; oma[Nivel.KASI_V] = kasiTodellinen
             } else {
-                asento[Nivel.KYYNARPAA_O] = kyynarpaa; asento[Nivel.KASI_O] = kasiTodellinen
+                oma[Nivel.KYYNARPAA_O] = kyynarpaa; oma[Nivel.KASI_O] = kasiTodellinen
             }
         }
 
         // Legs: knees bend forward towards the planted (or swinging) feet; in the air they tuck up
         for ((i, j) in jalat.withIndex()) {
             val s = if (i == 0) -1f else 1f
-            val lonkka = if (i == 0) asento[Nivel.LONKKA_V] else asento[Nivel.LONKKA_O]
+            val lonkka = if (i == 0) oma[Nivel.LONKKA_V] else oma[Nivel.LONKKA_O]
             val jalkaSuunta = kierra(f, ylos, s * 0.12f)
             val nilkkaKohde = if (ilmassa) {
                 val tuck = saturoi(pystyNopeus * 2f + 0.6f)
@@ -918,13 +1167,13 @@ class Ukko(
             val varvasSuunta = kierra(jalkaSuunta, jalkaSuunta cross ylos, varvasKallistus)
             val varvas = nilkka + varvasSuunta * m.jalkatera - ylos * (m.nilkka * 0.55f)
             if (i == 0) {
-                asento[Nivel.POLVI_V] = polvi; asento[Nivel.NILKKA_V] = nilkka; asento[Nivel.VARVAS_V] = varvas
+                oma[Nivel.POLVI_V] = polvi; oma[Nivel.NILKKA_V] = nilkka; oma[Nivel.VARVAS_V] = varvas
             } else {
-                asento[Nivel.POLVI_O] = polvi; asento[Nivel.NILKKA_O] = nilkka; asento[Nivel.VARVAS_O] = varvas
+                oma[Nivel.POLVI_O] = polvi; oma[Nivel.NILKKA_O] = nilkka; oma[Nivel.VARVAS_O] = varvas
             }
         }
-        asento.paksuus = 1f
-        asento.nakyvissa = true
+        oma.paksuus = 1f
+        oma.nakyvissa = true
     }
 
     // =====================================================================================================
@@ -934,12 +1183,12 @@ class Ukko(
     private fun paivitaKiinni(dt: Float) {
         val n = nukke ?: return
         o.nollaa()
-        val maa = lattia?.keskus?.y ?: juuri.y
+        val maa = maanTaso ?: pintaL?.keskus?.y ?: juuriL.y
         n.paivita(dt, maa)
         if (toiminto == Toiminto.OSUMA) {
             o.tunne = Tunne.YLLATTYNYT
             o.suuAuki = 0.8f
-            for (i in asento.nivelet.indices) asento.nivelet[i] = n.paikat[i]
+            for (i in oma.nivelet.indices) oma.nivelet[i] = n.paikat[i]
             if (toimintoAika >= toimintoKesto) {
                 if (pallonKeskus == null) pallonKeskus = keskipiste
                 aloita(Toiminto.KAPERTYY)
@@ -953,21 +1202,21 @@ class Ukko(
             var painopiste = V3.NOLLA
             for (p in n.paikat) painopiste += p
             painopiste /= n.paikat.size.toFloat()
-            for (i in asento.nivelet.indices) {
+            for (i in oma.nivelet.indices) {
                 val suhteellinen = (n.paikat[i] - painopiste) * (1f - 0.88f * e)
-                asento.nivelet[i] = lerp(n.paikat[i], c + suhteellinen, e)
+                oma.nivelet[i] = lerp(n.paikat[i], c + suhteellinen, e)
             }
-            asento.paksuus = 1f - 0.7f * e
+            oma.paksuus = 1f - 0.7f * e
             if (toimintoAika >= toimintoKesto) {
-                asento.nakyvissa = false
+                oma.nakyvissa = false
                 valmis = true
             }
         }
         // The head keeps facing roughly where it did
-        val paaYlos = (asento[Nivel.PAA] - asento[Nivel.NISKA]).suunta(V3.Y)
-        asento.paa = Kehys.ylosta(paaYlos, asento.paa.eteen)
-        asento.paaVenytys = clamp(venytys.paivita(dt, 1f), 0.72f, 1.3f)
-        juuri = V3(asento[Nivel.LANTIO].x, maa, asento[Nivel.LANTIO].z)
+        val paaYlos = (oma[Nivel.PAA] - oma[Nivel.NISKA]).suunta(V3.Y)
+        oma.paa = Kehys.ylosta(paaYlos, oma.paa.eteen)
+        oma.paaVenytys = clamp(venytys.paivita(dt, 1f), 0.72f, 1.3f)
+        juuriL = V3(oma[Nivel.LANTIO].x, maa, oma[Nivel.LANTIO].z)
     }
 
     // =====================================================================================================
@@ -975,7 +1224,7 @@ class Ukko(
     // =====================================================================================================
 
     private fun paivitaKasvot(dt: Float) {
-        val k = asento.kasvot
+        val k = oma.kasvot
         val (hy, au, le, kk, kku, il, sk) = when (o.tunne) {
             Tunne.NEUTRAALI -> Ilme(0.18f, 0f, 1f, 0f, 0f, 0.05f, 1f)
             Tunne.ILOINEN -> Ilme(0.95f, 0.22f, 1.1f, 0.35f, 0.25f, 0.5f, 1f)
@@ -1017,7 +1266,7 @@ class Ukko(
         k.aukiO = saturoi(luomi)
 
         // Pupils lead the head: they jump straight to the target, the head follows
-        val kohde = pallo?.takeIf { (it - asento[Nivel.PAA]).pituus < 2.5f } ?: o.katse
+        val kohde = palloL?.takeIf { (it - oma[Nivel.PAA]).pituus < 2.5f } ?: o.katse
         sakkadiAjastin -= dt
         if (sakkadiAjastin <= 0f) {
             sakkadiAjastin = 0.4f + rnd.nextFloat() * 1.4f
@@ -1027,8 +1276,8 @@ class Ukko(
         var x = sakkadiX
         var y = sakkadiY
         if (kohde != null) {
-            val h = asento.paa
-            val d = (kohde - asento[Nivel.PAA]).suunta(h.eteen)
+            val h = oma.paa
+            val d = (kohde - oma[Nivel.PAA]).suunta(h.eteen)
             x = clamp((d dot h.oikealle) * 1.6f, -1f, 1f) + sakkadiX * 0.25f
             y = clamp((d dot h.ylos) * 1.6f, -1f, 1f) + sakkadiY * 0.25f
         }

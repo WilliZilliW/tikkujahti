@@ -109,6 +109,16 @@ class Aanet {
             Aani.POMPPU -> soita("pomppu", v * t.voima) { Syntikka.pomppu(1f) }
             Aani.OSUMA -> soita("osuma", v) { Syntikka.osuma() }
             Aani.KERAYS -> soita("kerays", 0.9f) { Syntikka.kerays() }
+            Aani.TORJUNTA -> soita("torjunta", v) { Syntikka.torjunta() }
+            Aani.TUTKA -> soita("tutka", 0.8f) { Syntikka.tutka() }
+            Aani.HIDASTUS -> soita("hidastus", v) { Syntikka.hidastus() }
+            Aani.LIIMA -> soita("liima", v) { Syntikka.liima() }
+            Aani.POIMINTA -> soita("poiminta", 0.9f) { Syntikka.poiminta() }
+            // The glitter of a hidden ball grows louder as the player gets closer
+            Aani.KIMALLUS -> {
+                val d = t.paikka.etaisyys(kuulija)
+                soita("kimallus", (0.9f / (0.3f + d * d)).coerceAtMost(0.8f) * t.voima) { Syntikka.kimallus() }
+            }
             Aani.AANTELY -> t.aantely?.let { a ->
                 // A few pitches and takes per sound are enough, and keep the cache small
                 val k = (t.korkeus * 8).roundToInt() / 8f

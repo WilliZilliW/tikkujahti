@@ -49,22 +49,41 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
   Ukko suosii kävelykohteita pelaajan näkökentässä (`katsojanSuunta`).
 - `mesh/Verkko.kt` – kiinteän topologian verkko osittain (materiaaleittain). `mesh/UkkoVerkko.kt` – ukko:
   putkiraajat pyöristetyin nivelin, pää ellipsoidina, kasvot pään pinnalla (`kp(a, b, koho)`); osat KEHO,
-  VALKOINEN, TUMMA, SUU, KIELI. `PalloVerkko` – kaksivärinen pallo aaltoilevalla saumalla.
+  VALKOINEN, TUMMA, SUU, KIELI, VARUSTE (tyypin mukaan kilpi, laskuvarjo tai ninjan otsanauha). `PalloVerkko` – kaksivärinen pallo aaltoilevalla saumalla.
 - `peli/Heitto.kt` – `Kamera`, `Pyyhkaisy` → `Heitto` (tähtäyspiste, voima, kaarre). `peli/Pallo.kt` – fysiikka.
   `peli/Peli.kt` – ukkojen tuonti, heitto (ballistinen kaari tähtäyspisteeseen + tähtäysapu), osumat
   (pallon askel vs. raajakapselit), vangitseminen ja paluu, `tapahtumat` ääniä varten.
-- Ukkotyypit (`ukko/Ulkonako.kt`: `Tyyppi`, `Harvinaisuus`): TAVALLINEN, JUOKSIJA (pieni, juoksee aina), ISO
-  (3 osumaa: `Ukko.tolaisu` → suuttuu ja pallo kimpoaa), KULTAINEN (harvinainen, väistää). `Peli.luoUlkonako`
-  tekee tyypin mukaisen ukon, erikoisia on paikalla yksi kerrallaan. Pisteet = tyypin pisteet × `kerroin`
-  (putki peräkkäisiä kiinniottoja, huti nollaa). `peli/Albumi.kt` – kerätyt tyypeittäin, tallennus tekstinä
-  (selain: localStorage, Android: SharedPreferences).
+- Ukkotyypit (`ukko/Ulkonako.kt`: `Tyyppi`, `Harvinaisuus`), kaikki issue #1:n tyypit: TAVALLINEN, JUOKSIJA
+  (väistää kaiken, kunnes hidastetaan), ISO (3 osumaa: `Ukko.tolaisu`), KULTAINEN (vain kultaisella pallolla),
+  KIIPEILIJA (seinillä nopea), LASKUVARJO (leijuu alas, varjo taittuu), NINJA (torjuu kaiken paitsi verkon,
+  juoksee seinillä), KILPI (torjuu edestä; takaa tai pompun kautta menee), PIILO (`haamu`: vain kasvot näkyvät
+  ja pallot menevät läpi, kunnes tutka paljastaa), LAUMA (kolme pientä, `ryhma`; muut karkaavat kun yksi jää
+  kiinni muulla kuin monipallolla), KATTO (roikkuu katossa pää alaspäin).
+- **Seinät ja katto:** `Ukko` elää omassa avaruudessaan (`oma`-asento), jossa sen pinta on aina lattia, ja
+  `julkaise()` kääntää valmiin asennon maailmaan (`asento`). `ukko.lattia = pinta` vaihtaa pintaa (asento
+  liukuu 0,3 s), joten kaikki mitä ukko osaa lattialla toimii seinällä ja katossa. Osuman saanut irtoaa ja
+  putoaa lattialle (`maanTaso`). Kiipeilijän ja ninjan reitin (lattia → seinän juuri → seinälle → alas) ohjaa
+  `Peli.ohjaaKiipeilijaa`, laumaa `Peli.ohjaaLaumoja`. Jos AR ei tunne kattoa, kattoukko roikkuu kuvitellusta
+  katosta (`OLETUSKATTO` 2,1 m lattiasta). Kiipeilijä kävelee seinällä pystyssä kuin lattialla: oikeaa
+  kiipeilyasentoa (kädet ja jalat seinässä) tai reunalla roikkumista ei vielä ole.
+- Erikoisukot lähtevät itse pois `VIERAILU` (40 s) jälkeen, erikoisia on paikalla yksi kerrallaan.
+- **Pallot** (`peli/Pallo.kt`: `PalloLaji`, `Reppu`): NORMI (loputon), VERKKO (ei voi väistää/torjua, iso
+  osuma-alue), TUTKA (paljastaa piiloukot 4 m säteeltä), HIDASTUS (hidastaa 1,3 m säteeltä), MONI (hajoaa
+  kolmeksi), HAKEUTUVA (ohjautuu lähimpään), KULTAINEN, POMPPU (nappaa vielä 5 pompun jälkeen), TAHMA (liimaa
+  ukon 5 s). Reppuun mahtuu 5 erikoispalloa. Niitä saa huoneessa lojuvista kimaltavista `Aarre`ista osumalla
+  niihin millä tahansa pallolla (useimmiten tarjolla on paikalla olevalle ukolle sopiva pallo:
+  `Peli.sopivaPallo`), ja joskus kiinni jääneeltä ukolta. Parit: `Peli.vaadittuPallo` (pakolliset: ninja–verkko,
+  kultainen–kultainen) ja `sopivaPallo`. `Tehoste` = pallon laukeamisen kupla, `Tapahtuma.teksti` = pelaajalle
+  näytettävä ilmoitus. Piilopaikkojen päivittäistä vaihtumista ei ole.
+- Pisteet = tyypin pisteet × `kerroin` (putki peräkkäisiä kiinniottoja, huti nollaa). `peli/Albumi.kt` ja
+  `Reppu` tallentuvat tekstinä (selain: localStorage, Android: SharedPreferences).
 - `aani/Syntikka.kt` – kaikki äänet PCM:nä (22050 Hz): formanttisiansaksa `Aantely`-kohtaisesti + tehosteet.
   **Kukaan ei ole vielä kuullut näitä**: testi tarkistaa vain, että ne ovat kelvollista ääntä.
 
 `webApp/` (Kotlin/JS, ES-moduulit koska three.js on ESM-only): `Three.kt` (sidonnat vain käytetylle osalle),
 `Piirto.kt` (`UkkoPiirto`, `PalloPiirto`, `PeliPiirto`, `Tallennus`, `Nakyma`), `PeliSivu.kt` (huone + WebXR-AR hit-testillä ja
-dom-overlaylla, albumi), `Labra.kt` (ajaa oikeaa `Peli`ä yhdellä ukolla: tyypin valinta, "Heitä pallo",
-"Väistää"), `Aanet.kt` (Web Audio). Sivut `index.html`, `labra.html`, tyylit `tyyli.css`.
+dom-overlaylla, albumi, pallorivi, ilmoitukset), `Labra.kt` (ajaa oikeaa `Peli`ä yhdellä ukolla: tyypin ja
+pallon valinta, "Heitä pallo", "Väistää"; kuvatilassa `pinta=seina|katto`), `Aanet.kt` (Web Audio). Sivut `index.html`, `labra.html`, tyylit `tyyli.css`.
 
 `androidApp/`: `MainActivity.kt` (`PeliTila`, `PeliNakyma`: `ARSceneView` + Compose-HUD), `ArMaailma.kt`
 (ARCore-tasot → `Pinta`, kamera → `Kamera`; lattia = suurin ylöspäin osoittava taso alimman lähellä),
@@ -87,8 +106,8 @@ päällä, ja molemmat ajot menivät läpi ensimmäisestä `main`-pushista. Julk
 ## Seuraavaksi
 1. Laitepalaute yllä olevista ja korjaukset. Äänien kuuntelu ja viritys.
 2. Issue #1:n "Ensimmäinen versio" -listan ruksit, kun omistaja on todennut kohdat laitteella.
-3. Issue #1:n seuraavat asiat suunnilleen tässä järjestyksessä: erikoispallot ja niiden parit (verkko, hidastus,
-   moni, hakeutuva, kultainen; `Pallo`on laji), loput ukkotyypit (ninja, kilpi, piilo, lauma), tyhjän hetken
-   touhut (istuu reunalla), kiipeily seinillä ja reunoilla roikkuminen, ketjut ja tornit.
+3. Issue #1:n seuraavat asiat: oikea kiipeilyasento ja reunalla roikkuminen/istuminen, ukot piiloon esineiden
+   taakse kurkkimaan, ketjut ja tornit, pyristely pallossa (napautus), piilopaikat jotka vaihtuvat päivittäin,
+   hatut ja asut, ukkokylä. Albumin vihjeet ja tyyppien yleisyys (`Peli.YLEISYYS`) kaipaavat pelitestausta.
 4. Depth API (piiloutuminen, osumat oikeisiin pintoihin), valon arvio selaimen AR:ään.
 5. Ehdota pilviympäristön asennusskriptiksi yllä oleva SDK-asennus.

@@ -98,8 +98,29 @@ body.ar-tila { background: transparent; }
     linear-gradient(115deg, transparent 46%, var(--v) 46% 54%, transparent 54%) 62% 100% / 14px 16px no-repeat,
     linear-gradient(65deg, transparent 46%, var(--v) 46% 54%, transparent 54%) 38% 100% / 14px 16px no-repeat;
 }
-.kuvake.juoksija { --v: #2bb3a3; transform: scale(.8) skewX(-8deg); }
-.kuvake.iso { --v: #8e6be8; transform: scale(1.15); }
-.kuvake.kultainen { --v: #f4be1e; filter: drop-shadow(0 0 4px #ffe27a); }
 .puuttuu .kuvake { --v: #2a2630; opacity: .35; filter: none; }
 body.kuva .nakyma { bottom: 0 !important; left: 0 !important; }
+
+/* Balls to choose from */
+.pallorivi {
+  position: absolute; right: calc(12px + env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column-reverse; gap: 8px;
+}
+.pallonappi {
+  position: relative; width: 44px; height: 44px; padding: 0; border: 3px solid rgba(255, 252, 245, .9);
+  background: linear-gradient(160deg, var(--a) 0 52%, var(--b) 52%);
+  box-shadow: 0 1px 4px rgba(40, 30, 60, .35), inset -3px -4px 6px rgba(0, 0, 0, .18);
+}
+.pallonappi.valittu { border-color: #2a2630; transform: scale(1.12); }
+.pallonappi span {
+  position: absolute; right: -6px; top: -6px; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 4px;
+  background: #2a2630; color: #fff; font-size: 12px; font-weight: 700; line-height: 20px;
+}
+.rivi .pallonappi { width: 32px; height: 32px; border-width: 2px; }
+.ilmoitus {
+  position: absolute; left: 50%; bottom: calc(22% + env(safe-area-inset-bottom)); width: max-content; max-width: 82%;
+  padding: 8px 14px; border-radius: 14px; text-align: center; pointer-events: none;
+  background: rgba(255, 252, 245, .94); box-shadow: 0 2px 8px rgba(40, 30, 60, .3); font-weight: 600;
+  opacity: 0; transform: translate(-50%, 12px); transition: opacity .25s, transform .25s;
+}
+.ilmoitus.nakyy { opacity: 1; transform: translate(-50%, 0); }

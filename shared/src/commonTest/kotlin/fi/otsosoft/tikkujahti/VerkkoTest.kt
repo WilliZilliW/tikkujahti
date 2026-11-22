@@ -5,6 +5,7 @@ import fi.otsosoft.tikkujahti.mesh.PalloVerkko
 import fi.otsosoft.tikkujahti.mesh.UkkoVerkko
 import fi.otsosoft.tikkujahti.mesh.Verkko
 import fi.otsosoft.tikkujahti.ukko.Toiminto
+import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import fi.otsosoft.tikkujahti.ukko.Ukko
 import fi.otsosoft.tikkujahti.ukko.Ulkonako
 import kotlin.test.Test
@@ -38,11 +39,13 @@ class VerkkoTest {
 
     @Test
     fun ukonVerkkoPysyyEhjanaKaikissaToiminnoissa() {
-        for (t in Toiminto.entries) {
-            val u = Ukko(1, Ulkonako(Ulkonako.VARIT[0]), V3(0.3f, 0f, -1f), 0.7f, 5)
+        // Every action on a plain figure, and the kinds with accessories standing about
+        val tapaukset = Toiminto.entries.map { it to Tyyppi.TAVALLINEN } + listOf(Tyyppi.KILPI, Tyyppi.LASKUVARJO, Tyyppi.NINJA).map { Toiminto.VILKUTTAA to it }
+        for ((t, tyyppi) in tapaukset) {
+            val u = Ukko(1, Ulkonako(Ulkonako.VARIT[0], tyyppi = tyyppi), V3(0.3f, 0f, -1f), 0.7f, 5)
             u.omatoiminen = false
             u.katsoja = V3(0f, 1.4f, 0.5f)
-            val v = UkkoVerkko(u.m)
+            val v = UkkoVerkko(u.m, tyyppi)
             val indeksit = v.indeksit.copyOf()
             val pisteita = v.pisteita
             repeat(90) { u.paivita(1f / 60f) }
@@ -57,7 +60,7 @@ class VerkkoTest {
                 if (!u.kiinni && u.asento.kasvot.aukiV > 0.9f && ruutu % 5 == 0) {
                     val vaarin = vaarinPain(v)
                     // Tubes fold a little inside sharply bent joints, and lids squeeze the pupils into slivers
-                    for (osa in 0 until UkkoVerkko.KIELI) { // not the tongue: it is squeezed flat between the lips
+                    for (osa in listOf(0, 1, 2, 3, UkkoVerkko.VARUSTE)) { // not the tongue: it is squeezed flat between the lips
                         assertTrue(vaarin[osa] < 0.04f, "$t ruutu $ruutu: osasta $osa on nurinpäin ${vaarin[osa] * 100} %")
                     }
                 }

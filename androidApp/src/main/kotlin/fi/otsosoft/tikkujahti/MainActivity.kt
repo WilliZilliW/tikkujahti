@@ -53,6 +53,12 @@ import fi.otsosoft.tikkujahti.matikka.pehmea
 import fi.otsosoft.tikkujahti.peli.Albumi
 import fi.otsosoft.tikkujahti.peli.Heitto
 import fi.otsosoft.tikkujahti.peli.Kamera
+import fi.otsosoft.tikkujahti.peli.PalloLaji
+import fi.otsosoft.tikkujahti.peli.Reppu
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.delay
 import fi.otsosoft.tikkujahti.peli.Peli
 import fi.otsosoft.tikkujahti.peli.Pyyhkaisy
 import io.github.sceneview.ar.ARSceneView
@@ -72,8 +78,13 @@ class MainActivity : ComponentActivity() {
  * The game's state on the phone: the shared [Peli], the camera ARCore reports, the swipe being drawn and
  * the ball in the player's hand.
  */
-class PeliTila(albumi: Albumi, private val tallenna: (Albumi) -> Unit) {
-    val peli = Peli((System.nanoTime() % 100000).toInt(), albumi)
+class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Reppu) -> Unit) {
+    val peli = Peli((System.nanoTime() % 100000).toInt(), albumi, reppu)
+    /** The latest note for the player (what was found, why a ball bounced off), and a count that grows with each. */
+    var ilmoitus: String? = null
+        private set
+    var ilmoituksia = 0
+        private set
     private var tallennettu = 0
     val kamera = Kamera(V3.NOLLA, Kehys.luo(-V3.Z), 0.6f, 0.5f)
     val aanet = Aanet()
@@ -101,16 +112,24 @@ class PeliTila(albumi: Albumi, private val tallenna: (Albumi) -> Unit) {
         lattia = lattiataso
         peli.maailma.asetaPinnat(pinnat)
         peli.paivita(dt, kamera)
-        for (t in peli.tapahtumat) aanet.soita(t, kamera.paikka)
-        if (peli.albumi.muutoksia != tallennettu) {
-            tallennettu = peli.albumi.muutoksia
-            tallenna(peli.albumi)
+        for (t in peli.tapahtumat) {
+            aanet.soita(t, kamera.paikka)
+            t.teksti?.let { ilmoita(it) }
+        }
+        if (peli.albumi.muutoksia + peli.reppu.muutoksia != tallennettu) {
+            tallennettu = peli.albumi.muutoksia + peli.reppu.muutoksia
+            tallenna(peli.albumi, peli.reppu)
         }
         kasiTauko -= dt
         if (!pyyhkaisy.kaynnissa) {
             kasiX += (0f - kasiX) * minOf(1f, dt * 12f)
             kasiY += (KASI_LEPO_Y - kasiY) * minOf(1f, dt * 12f)
         }
+    }
+
+    fun ilmoita(teksti: String) {
+        ilmoitus = teksti
+        ilmoituksia++
     }
 
     /** Where the ball in the hand is in the world, or null when there is none to show. */
@@ -162,7 +181,20 @@ fun PeliNakyma() {
     val scene = rememberScene(engine)
     val muisti = LocalContext.current.getSharedPreferences("tikkujahti", Context.MODE_PRIVATE)
     val tila = remember {
-        PeliTila(Albumi.lue(muisti.getString("albumi", null))) { a -> muisti.edit().putString("albumi", a.teksti()).apply() }
+        PeliTila(Albumi.lue(muisti.getString("albumi", null)), Reppu.lue(muisti.getString("reppu", null))) { a, r ->
+            muisti.edit().putString("albumi", a.teksti()).putString("reppu", r.teksti()).apply()
+        }
+    }
+    var ilmoituksia by remember { mutableIntStateOf(0) }
+    var reppuMuutos by remember { mutableIntStateOf(0) }
+    var valittu by remember { mutableStateOf(PalloLaji.NORMI) }
+    var ilmoitusNakyy by remember { mutableStateOf(false) }
+    LaunchedEffect(ilmoituksia) {
+        if (ilmoituksia > 0) {
+            ilmoitusNakyy = true
+            delay(4200)
+            ilmoitusNakyy = false
+        }
     }
     var pisteet by remember { mutableIntStateOf(0) }
     var kerroin by remember { mutableIntStateOf(1) }
@@ -199,6 +231,9 @@ fun PeliNakyma() {
                 keratyt = tila.peli.keratyt
                 pisteet = tila.peli.pisteet
                 kerroin = tila.peli.kerroin
+                ilmoituksia = tila.ilmoituksia
+                reppuMuutos = tila.peli.reppu.muutoksia
+                valittu = tila.peli.reppu.valittu
                 heitot = tila.peli.heitot
             },
             onTouchEvent = { e, _ -> if (albumiAuki) false else tila.kosketus(e, koko) },
@@ -241,6 +276,36 @@ fun PeliNakyma() {
                 )
             }
         }
+        // The balls to choose from: plain ones without end, and the special ones in the bag
+        val reppu = tila.peli.reppu
+        val omat = remember(reppuMuutos) { PalloLaji.entries.filter { it == PalloLaji.NORMI || reppu[it] > 0 } }
+        if (omat.size > 1 && lattia != null) {
+            Column(Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (l in omat.reversed()) {
+                    Box(contentAlignment = Alignment.TopEnd) {
+                        Box(
+                            Modifier.size(if (l == valittu) 52.dp else 44.dp).clip(CircleShape)
+                                .background(if (l == valittu) Color(0xFF2A2630) else Color(0xE6FFFCF5)).padding(3.dp).clip(CircleShape)
+                                .background(Brush.verticalGradient(0.52f to Color(l.a.r, l.a.g, l.a.b), 0.52f to Color(l.b.r, l.b.g, l.b.b)))
+                                .clickable {
+                                    reppu.valitse(l)
+                                    tila.ilmoita("${l.nimi}: ${l.kuvaus}")
+                                },
+                        )
+                        if (l != PalloLaji.NORMI) {
+                            Text("${reppu[l]}", Modifier.clip(CircleShape).background(Color(0xFF2A2630)).padding(horizontal = 6.dp), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+        if (ilmoitusNakyy) {
+            Text(
+                tila.ilmoitus.orEmpty(),
+                Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(start = 24.dp, end = 72.dp, bottom = 150.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xF0FFFCF5)).padding(horizontal = 14.dp, vertical = 8.dp),
+                color = Color(0xFF2A2630), fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+            )
+        }
         if (albumiAuki) AlbumiNakyma(tila.peli.albumi, keratyt) { albumiAuki = false }
     }
 }
@@ -253,7 +318,7 @@ fun PeliNakyma() {
 fun AlbumiNakyma(albumi: Albumi, @Suppress("UNUSED_PARAMETER") keratyt: Int, sulje: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color(0x732A2630)).clickable(onClick = sulje).safeDrawingPadding().padding(16.dp), contentAlignment = Alignment.Center) {
         Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xFFFFFCF5)).clickable(enabled = false) {}.padding(16.dp),
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xFFFFFCF5)).clickable(enabled = false) {}.verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             val tumma = Color(0xFF2A2630)
@@ -261,17 +326,17 @@ fun AlbumiNakyma(albumi: Albumi, @Suppress("UNUSED_PARAMETER") keratyt: Int, sul
             for (t in Tyyppi.entries) {
                 val maara = albumi[t]
                 val vari = when (t) {
-                    Tyyppi.TAVALLINEN -> Ulkonako.VARIT[0]
-                    Tyyppi.JUOKSIJA -> Ulkonako.VARIT[1]
-                    Tyyppi.ISO -> Ulkonako.VARIT[2]
                     Tyyppi.KULTAINEN -> Ulkonako.KULTA
+                    Tyyppi.NINJA -> Ulkonako.NINJA
+                    Tyyppi.PIILO -> Ulkonako.HAALEA
+                    else -> Ulkonako.VARIT[t.ordinal % Ulkonako.VARIT.size]
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(28.dp).clip(CircleShape).background(if (maara > 0) Color(vari.r, vari.g, vari.b) else Color(0x402A2630)))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(if (maara > 0) t.nimi else "???", fontWeight = FontWeight.Bold, color = tumma)
-                        Text(if (maara > 0) "${t.harvinaisuus.nimi} · ${t.pisteet} p" else t.vihje, fontSize = 13.sp, color = tumma.copy(alpha = 0.7f))
+                        Text(if (maara > 0) "${t.harvinaisuus.nimi} · ${t.pisteet} p · ${t.vihje}" else t.vihje, fontSize = 13.sp, color = tumma.copy(alpha = 0.7f))
                     }
                     if (maara > 0) Text("$maara", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = tumma)
                 }

@@ -10,6 +10,10 @@ import fi.otsosoft.tikkujahti.peli.Albumi
 import fi.otsosoft.tikkujahti.peli.Heitto
 import fi.otsosoft.tikkujahti.peli.Kamera
 import fi.otsosoft.tikkujahti.peli.Pallo
+import fi.otsosoft.tikkujahti.peli.PalloLaji
+import fi.otsosoft.tikkujahti.peli.Reppu
+import fi.otsosoft.tikkujahti.ukko.Ulkonako
+import fi.otsosoft.tikkujahti.ukko.Vari
 import fi.otsosoft.tikkujahti.peli.Peli
 import fi.otsosoft.tikkujahti.peli.Pyyhkaisy
 import fi.otsosoft.tikkujahti.ukko.Tyyppi
@@ -34,7 +38,7 @@ import kotlin.math.tan
  */
 class PeliSivu(private val juuri: HTMLElement) {
     private val nakyma = Nakyma(el("div", "nakyma", juuri), 3.3)
-    private var peli = Peli(1, Tallennus.lueAlbumi())
+    private var peli = Peli(1, Tallennus.lueAlbumi(), Tallennus.lueReppu())
     private val aanet = Aanet()
     private val kamera = Kamera(V3(0f, 0.7f, 1.7f), Kehys.luo(-V3.Z), tan(25.0 * PI / 180).toFloat(), 1f)
     private val piirto = PeliPiirto(nakyma.scene)
@@ -47,7 +51,7 @@ class PeliSivu(private val juuri: HTMLElement) {
     private var kallistus = -0.28
 
     // The ball in the player's hand: where it is on the screen (-1…1), and when it comes back after a throw
-    private val kasiPallo = PalloPiirto(PeliPiirto.PALLO_A, PeliPiirto.PALLO_B)
+    private val kasiPallo = PalloPiirto(PalloLaji.NORMI)
     private var kasiX = 0f
     private var kasiY = KASI_LEPO_Y
     private var kasiTauko = 0.0
@@ -66,6 +70,9 @@ class PeliSivu(private val juuri: HTMLElement) {
     private val laskuri = el("div", "laskuri", hud)
     private val putki = el("div", "putki", hud)
     private val vihje = el("div", "vihje", hud)
+    private val ilmoitus = el("div", "ilmoitus", hud)
+    private val pallorivi = el("div", "pallorivi", hud)
+    private var ilmoitusAjastin = 0
     private val napit = el("div", "ylanapit", hud)
     private var arNappi: HTMLElement? = null
     private var edellinen = -1.0
@@ -102,10 +109,42 @@ class PeliSivu(private val juuri: HTMLElement) {
         edellinen = aika
         if (ar != null) arKamera(xrRuutu) else huoneKamera()
         paivita(dt.toFloat())
-        for (t in peli.tapahtumat) aanet.soita(t, kamera.paikka)
+        for (t in peli.tapahtumat) {
+            aanet.soita(t, kamera.paikka)
+            t.teksti?.let { ilmoita(it) }
+        }
         naytaPisteet()
         nakyma.piirra()
     }
+
+    /** A note that slides in for a few seconds: what was found, why a ball bounced off. */
+    private fun ilmoita(teksti: String) {
+        ilmoitus.textContent = teksti
+        ilmoitus.classList.add("nakyy")
+        window.clearTimeout(ilmoitusAjastin)
+        ilmoitusAjastin = window.setTimeout({ ilmoitus.classList.remove("nakyy") }, 4200)
+    }
+
+    /** The row of balls to choose from: plain ones without end, and the special ones in the bag. */
+    private fun naytaPallot() {
+        pallorivi.innerHTML = ""
+        val omat = PalloLaji.entries.filter { it == PalloLaji.NORMI || peli.reppu[it] > 0 }
+        if (omat.size < 2) return
+        for (l in omat) {
+            val n = el("button", if (l == peli.reppu.valittu) "pallonappi valittu" else "pallonappi", pallorivi)
+            n.setAttribute("aria-label", l.nimi)
+            n.setAttribute("title", "${l.nimi}: ${l.kuvaus}")
+            n.style.setProperty("--a", css(l.a)); n.style.setProperty("--b", css(l.b))
+            if (l != PalloLaji.NORMI) el("span", "", n).textContent = "${peli.reppu[l]}"
+            n.addEventListener("click", {
+                peli.reppu.valitse(l)
+                ilmoita("${l.nimi}: ${l.kuvaus}")
+            })
+            n.addEventListener("beforexrselect", { e: Event -> e.preventDefault() })
+        }
+    }
+
+    private fun css(v: Vari) = "rgb(${(v.r * 255).toInt()},${(v.g * 255).toInt()},${(v.b * 255).toInt()})"
 
     private fun naytaPisteet() {
         laskuri.textContent = "${peli.pisteet}"
@@ -119,9 +158,14 @@ class PeliSivu(private val juuri: HTMLElement) {
         peli.paivita(dt, kamera)
 
         piirto.paivita(peli)
-        if (peli.albumi.muutoksia != tallennettu) {
-            tallennettu = peli.albumi.muutoksia
-            Tallennus.tallenna(peli.albumi)
+        if (peli.albumi.muutoksia + peli.reppu.muutoksia != tallennettu) {
+            tallennettu = peli.albumi.muutoksia + peli.reppu.muutoksia
+            Tallennus.tallenna(peli.albumi, peli.reppu)
+            naytaPallot()
+        }
+        if (kasiPallo.laji != peli.reppu.valittu) {
+            kasiPallo.laji = peli.reppu.valittu
+            naytaPallot()
         }
 
         // The ball in the hand: drawn in the camera's own space, so it stays put on the screen
@@ -228,6 +272,7 @@ class PeliSivu(private val juuri: HTMLElement) {
 
     private fun rakennaHud() {
         laskuri.textContent = "0"
+        naytaPallot()
         vihje.textContent = VIHJE_HUONE
         val albumi = el("button", "nappi", napit)
         albumi.textContent = "Albumi"
@@ -260,10 +305,10 @@ class PeliSivu(private val juuri: HTMLElement) {
         el("h2", "", kortti).textContent = "Ukkoalbumi ${a.loydetty}/${Tyyppi.entries.size}"
         for (t in Tyyppi.entries) {
             val rivi = el("div", if (a[t] > 0) "ukkorivi" else "ukkorivi puuttuu", kortti)
-            el("div", "kuvake ${t.name.lowercase()}", rivi)
+            el("div", "kuvake", rivi).style.setProperty("--v", css(albumiVari(t)))
             val teksti = el("div", "", rivi)
             el("b", "", teksti).textContent = if (a[t] > 0) t.nimi else "???"
-            el("div", "pieni", teksti).textContent = if (a[t] > 0) "${t.harvinaisuus.nimi} · ${t.pisteet} p" else t.vihje
+            el("div", "pieni", teksti).textContent = if (a[t] > 0) "${t.harvinaisuus.nimi} · ${t.pisteet} p · ${t.vihje}" else t.vihje
             el("div", "maara", rivi).textContent = if (a[t] > 0) "${a[t]}" else ""
         }
         val sulje = el("button", "nappi", kortti)
@@ -333,7 +378,7 @@ class PeliSivu(private val juuri: HTMLElement) {
 
     private fun uusiPeli() {
         tallennettu = 0
-        peli = Peli((js("Date.now()") as Double % 100000.0).toInt(), Tallennus.lueAlbumi())
+        peli = Peli((js("Date.now()") as Double % 100000.0).toInt(), Tallennus.lueAlbumi(), Tallennus.lueReppu())
         heittoja = 0
     }
 
@@ -414,6 +459,8 @@ class PeliSivu(private val juuri: HTMLElement) {
         lisaa(Mesh(BoxGeometry(w, h, 0.05), seina), 0.0, h / 2, -d / 2 - 0.025)
         lisaa(Mesh(BoxGeometry(0.05, h, d), aine(0xdde4dc)), -w / 2 - 0.025, h / 2, 0.0)
         lisaa(Mesh(BoxGeometry(0.05, h, d), aine(0xdde4dc)), w / 2 + 0.025, h / 2, 0.0)
+        // The ceiling, for the figures that hang from it (it casts no shadow, or the room would be dark)
+        lisaa(Mesh(BoxGeometry(w, 0.05, d), aine(0xf4f3ee)), 0.0, h + 0.025, 0.0)
         val lista = aine(0xfaf8f2, 0.6)
         lisaa(Mesh(BoxGeometry(w, 0.07, 0.015), lista), 0.0, 0.035, -d / 2 + 0.0075)
         lisaa(Mesh(BoxGeometry(0.015, 0.07, d), lista), -w / 2 + 0.0075, 0.035, 0.0)
@@ -482,6 +529,8 @@ class PeliSivu(private val juuri: HTMLElement) {
         kallistus = p.get("kallistus")?.toDoubleOrNull() ?: kallistus
         val t = p.get("t")?.toFloatOrNull() ?: 5f
         val heitto = p.get("heitto")?.toFloatOrNull() ?: -1f
+        p.get("reppu")?.let { for (l in Reppu.lue(it).let { r -> PalloLaji.entries.filter { l -> l != PalloLaji.NORMI && r[l] > 0 } }) peli.reppu.lisaa(l) }
+        p.get("pallo")?.let { nimi -> PalloLaji.entries.firstOrNull { it.name == nimi } }?.let { peli.reppu.lisaa(it); peli.reppu.valitse(it) }
         huoneKamera()
         val dt = 1f / 60f
         var aika = 0f
@@ -501,12 +550,21 @@ class PeliSivu(private val juuri: HTMLElement) {
         }
         rakennaHud()
         naytaPisteet()
+        naytaPallot()
         if (p.get("albumi") != null) naytaAlbumi()
         nakyma.piirra()
         window.asDynamic().kuvaValmis = true
     }
 
     companion object {
+        /** A colour for each kind in the album. */
+        fun albumiVari(t: Tyyppi): Vari = when (t) {
+            Tyyppi.KULTAINEN -> Ulkonako.KULTA
+            Tyyppi.NINJA -> Ulkonako.NINJA
+            Tyyppi.PIILO -> Ulkonako.HAALEA
+            else -> Ulkonako.VARIT[t.ordinal % Ulkonako.VARIT.size]
+        }
+
         const val KASI_LEPO_Y = -0.72f
         const val KASI_SYVYYS = 0.5f
         const val AR_LATTIAN_SADE = 3.0

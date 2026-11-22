@@ -11,6 +11,8 @@ class Nukke(alku: Array<V3>, nopeudet: Array<V3>, m: Mitat) {
     private val edelliset = Array(alku.size) { V3.NOLLA }
     private val sade = m.raajaSade * 1.2f
     private var kertyma = 0f
+    /** A ceiling right above, if the figure was knocked off one: the doll must not fly up through it. */
+    var katto: Float? = null
 
     private val rajoitteet: List<Triple<Int, Int, Float>>
 
@@ -67,7 +69,11 @@ class Nukke(alku: Array<V3>, nopeudet: Array<V3>, m: Mitat) {
             }
             for (i in paikat.indices) {
                 val p = paikat[i]
-                if (p.y < lattiaY + sade) {
+                val k = katto
+                if (k != null && p.y > k - sade) {
+                    paikat[i] = V3(p.x, k - sade, p.z)
+                    edelliset[i] = V3(edelliset[i].x, k - sade, edelliset[i].z)
+                } else if (p.y < lattiaY + sade) {
                     paikat[i] = V3(p.x, lattiaY + sade, p.z)
                     // friction: the point drags along the floor
                     val e = edelliset[i]

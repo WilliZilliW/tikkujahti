@@ -24,5 +24,7 @@ class AaniTest {
         tarkista("pomppu", Syntikka.pomppu(1f))
         tarkista("osuma", Syntikka.osuma())
         tarkista("kerays", Syntikka.kerays())
+        tarkista("torjunta", Syntikka.torjunta()); tarkista("kimallus", Syntikka.kimallus()); tarkista("poiminta", Syntikka.poiminta())
+        tarkista("tutka", Syntikka.tutka()); tarkista("hidastus", Syntikka.hidastus()); tarkista("liima", Syntikka.liima())
     }
 }

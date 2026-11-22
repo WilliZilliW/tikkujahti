@@ -4,7 +4,11 @@ import fi.otsosoft.tikkujahti.maailma.PinnanLaji
 import fi.otsosoft.tikkujahti.maailma.Pinta
 import fi.otsosoft.tikkujahti.matikka.Kehys
 import fi.otsosoft.tikkujahti.matikka.V3
+import fi.otsosoft.tikkujahti.maailma.Huone
 import fi.otsosoft.tikkujahti.peli.Aani
+import fi.otsosoft.tikkujahti.peli.Aarre
+import fi.otsosoft.tikkujahti.peli.PalloLaji
+import fi.otsosoft.tikkujahti.peli.Reppu
 import fi.otsosoft.tikkujahti.peli.Albumi
 import fi.otsosoft.tikkujahti.peli.Heitto
 import fi.otsosoft.tikkujahti.peli.Kamera
@@ -211,6 +215,199 @@ class PeliTest {
         peli.heita(Heitto(0.9f, 0.5f, 0.5f, 0f), kamera)
         repeat(60 * 8) { peli.paivita(dt, kamera) }
         assertEquals(0, peli.putki)
+    }
+
+    private fun peliYhdella(tyyppi: Tyyppi, vaistotaito: Float? = null, suunta: Float = 0f, pinnat: List<Pinta> = listOf(lattia)): Pair<Peli, Ukko> {
+        val peli = Peli()
+        peli.maailma.asetaPinnat(pinnat)
+        peli.ukkojaKerralla = 0
+        peli.aarteita = false
+        peli.reppu.rajaton = true
+        val pohja = Peli.luoUlkonako(tyyppi, Ulkonako.VARIT[2], kotlin.random.Random(1))
+        val u = Ukko(1, if (vaistotaito == null) pohja else pohja.copy(luonne = pohja.luonne.copy(vaistotaito = vaistotaito)), V3(0f, 0f, -0.3f), suunta, 3, alkuKorkeus = 0.2f)
+        u.lattia = pinnat[0]
+        u.omatoiminen = false
+        repeat(150) { u.paivita(dt); u.aanet.clear() } // settles without a player to turn towards
+        peli.ukot += u
+        return peli to u
+    }
+
+    private fun pelaa(peli: Peli, sekunteja: Float): Set<Aani> {
+        val nahty = HashSet<Aani>()
+        repeat((sekunteja * 60).toInt()) {
+            peli.paivita(dt, kamera)
+            peli.tapahtumat.forEach { nahty += it.laji }
+        }
+        return nahty
+    }
+
+    @Test
+    fun ninjaTorjuuTavallisenPallonMuttaJaaVerkkoon() {
+        val (peli, ninja) = peliYhdella(Tyyppi.NINJA)
+        peli.paivita(dt, kamera)
+        heitaKohti(peli, ninja)
+        pelaa(peli, 4f)
+        assertEquals(0, peli.keratyt, "ninja jäi kiinni tavalliseen palloon")
+        assertTrue(!ninja.kiinni)
+        repeat(3) { // the net cannot be dodged, but a hop already under way can carry the ninja clear
+            if (peli.keratyt == 0) {
+                peli.reppu.valitse(PalloLaji.VERKKO)
+                heitaKohti(peli, ninja)
+                pelaa(peli, 5f)
+            }
+        }
+        assertEquals(1, peli.keratyt, "verkko ei napannut ninjaa")
+    }
+
+    @Test
+    fun kilpiTorjuuEdestaMuttaEiTakaa() {
+        val (peli, edesta) = peliYhdella(Tyyppi.KILPI)
+        peli.paivita(dt, kamera)
+        heitaKohti(peli, edesta)
+        assertTrue(Aani.TORJUNTA in pelaa(peli, 3f), "kilpi ei torjunut edestä tullutta palloa")
+        assertEquals(0, peli.keratyt)
+
+        // Facing away from the player: thrown at before it has turned round
+        val (peli2, takaa) = peliYhdella(Tyyppi.KILPI, suunta = kotlin.math.PI.toFloat())
+        peli2.paivita(dt, kamera)
+        heitaKohti(peli2, takaa)
+        pelaa(peli2, 5f)
+        assertEquals(1, peli2.keratyt, "selkään osunut pallo ei napannut kilpiukkoa")
+    }
+
+    @Test
+    fun piiloukonSaaVastaTutkanJalkeen() {
+        val (peli, piilo) = peliYhdella(Tyyppi.PIILO, vaistotaito = 0f)
+        peli.paivita(dt, kamera)
+        assertTrue(piilo.haamu && piilo.asento.haamu)
+        heitaKohti(peli, piilo)
+        pelaa(peli, 4f)
+        assertEquals(0, peli.keratyt, "pallo osui näkymättömään ukkoon")
+        peli.reppu.valitse(PalloLaji.TUTKA)
+        peli.heita(Heitto(0f, -0.2f, 0.4f, 0f), kamera)
+        assertTrue(Aani.TUTKA in pelaa(peli, 1.5f))
+        assertTrue(!piilo.haamu, "tutka ei paljastanut piiloukkoa")
+        heitaKohti(peli, piilo)
+        pelaa(peli, 5f)
+        assertEquals(1, peli.keratyt)
+    }
+
+    @Test
+    fun erikoispallotToimivat() {
+        // The multi-ball becomes three
+        val (peli, _) = peliYhdella(Tyyppi.TAVALLINEN, vaistotaito = 0f)
+        peli.reppu.valitse(PalloLaji.MONI)
+        peli.heita(Heitto(0.6f, 0.3f, 0.5f, 0f), kamera)
+        pelaa(peli, 0.3f)
+        assertEquals(3, peli.pallot.size)
+
+        // The homing ball finds a figure it was not thrown at
+        val (peli2, u2) = peliYhdella(Tyyppi.TAVALLINEN, vaistotaito = 0f)
+        peli2.paivita(dt, kamera)
+        peli2.reppu.valitse(PalloLaji.HAKEUTUVA)
+        val kohti = (u2.keskipiste + V3(0.45f, 0.25f, 0f) - kamera.paikka).suunta()
+        val e = kohti dot kamera.kehys.eteen
+        peli2.heita(Heitto((kohti dot kamera.kehys.oikealle) / e / (kamera.tanPuoliFov * kamera.kuvasuhde), (kohti dot kamera.kehys.ylos) / e / kamera.tanPuoliFov, 0.5f, 0f), kamera)
+        pelaa(peli2, 5f)
+        assertEquals(1, peli2.keratyt, "hakeutuva pallo ei löytänyt ukkoa")
+
+        // The sticky ball glues, the slow ball slows, and neither catches
+        val (peli3, u3) = peliYhdella(Tyyppi.JUOKSIJA)
+        peli3.paivita(dt, kamera)
+        peli3.reppu.valitse(PalloLaji.HIDASTUS)
+        peli3.heita(Heitto(0f, -0.25f, 0.4f, 0f), kamera) // at the floor in front of it
+        assertTrue(Aani.HIDASTUS in pelaa(peli3, 1.5f))
+        assertTrue(u3.hidastettu > 0f, "hidastuspallo ei hidastanut")
+        heitaKohti(peli3, u3)
+        pelaa(peli3, 5f)
+        assertEquals(1, peli3.keratyt, "hidastettu juoksija ei jäänyt kiinni")
+
+        val (peli4, u4) = peliYhdella(Tyyppi.TAVALLINEN, vaistotaito = 0f)
+        peli4.paivita(dt, kamera)
+        peli4.reppu.valitse(PalloLaji.TAHMA)
+        heitaKohti(peli4, u4)
+        assertTrue(Aani.LIIMA in pelaa(peli4, 1f))
+        assertTrue(u4.liimattu > 0f && !u4.kiinni)
+    }
+
+    @Test
+    fun aarteenSaaOsumallaJaReppuSailyy() {
+        val (peli, _) = peliYhdella(Tyyppi.TAVALLINEN, vaistotaito = 0f)
+        peli.ukot.clear()
+        peli.reppu.rajaton = false
+        val paikka = V3(0.2f, 0.07f, -0.4f)
+        peli.aarteet += Aarre(PalloLaji.VERKKO, paikka)
+        val kohti = (paikka - kamera.paikka).suunta()
+        val e = kohti dot kamera.kehys.eteen
+        peli.heita(Heitto((kohti dot kamera.kehys.oikealle) / e / (kamera.tanPuoliFov * kamera.kuvasuhde), (kohti dot kamera.kehys.ylos) / e / kamera.tanPuoliFov, 0.5f, 0f), kamera)
+        assertTrue(Aani.POIMINTA in pelaa(peli, 2f), "pallo ei poiminut aarretta")
+        assertEquals(1, peli.reppu[PalloLaji.VERKKO])
+        assertTrue(peli.aarteet.isEmpty())
+        val luettu = Reppu.lue(peli.reppu.teksti())
+        assertEquals(1, luettu[PalloLaji.VERKKO]); assertEquals(0, luettu[PalloLaji.TUTKA])
+        // Throwing it uses it up
+        peli.reppu.valitse(PalloLaji.VERKKO)
+        assertEquals(PalloLaji.VERKKO, peli.heita(Heitto(0f, 0f, 0.5f, 0f), kamera).laji)
+        assertEquals(0, peli.reppu[PalloLaji.VERKKO]); assertEquals(PalloLaji.NORMI, peli.reppu.valittu)
+        assertEquals(0, Reppu.lue("VERKKO=99;x").let { it.yhteensa - Reppu.KOKO })
+    }
+
+    @Test
+    fun ukkoKaveleeSeinallaJaKatossa() {
+        val seina = Pinta.suorakaide("seina", PinnanLaji.SEINA, V3(0f, 1.25f, -2f), V3.Z, V3.X, 4f, 2.5f)
+        val katto = Pinta.suorakaide("katto", PinnanLaji.KATTO, V3(0f, 2.5f, 0f), -V3.Y, V3.X, 4f, 4f)
+        for (pinta in listOf(seina, katto)) {
+            val u = Ukko(1, Ulkonako(Ulkonako.VARIT[1]), pinta.keskus, 0f, 11)
+            u.lattia = pinta
+            u.katsoja = V3(0f, 1.3f, 1.5f)
+            var kuljettu = 0f
+            var ed = u.juuri
+            repeat(60 * 40) { ruutu ->
+                u.paivita(dt)
+                u.aanet.clear()
+                kuljettu += (u.juuri - ed).pituus; ed = u.juuri
+                if (ruutu < 30) return@repeat // easing onto the surface
+                assertTrue(pinta.sisalla(u.juuri, 0.02f) && kotlin.math.abs(pinta.etaisyys(u.juuri)) < 1e-3f, "${pinta.id} ruutu $ruutu: ukko irtosi pinnasta: ${u.juuri}")
+                for (n in Nivel.entries) assertTrue(pinta.etaisyys(u.asento[n]) > -0.005f, "${pinta.id} ruutu $ruutu: $n pinnan läpi")
+                assertTrue(pinta.etaisyys(u.asento[Nivel.PAA]) > u.m.pituus * 0.35f, "${pinta.id} ruutu $ruutu (${u.toiminto}): pää ei ole irti pinnasta")
+            }
+            assertTrue(kuljettu > 0.5f, "${pinta.id}: ukko ei liikkunut ($kuljettu m)")
+            // Knocked off, it falls to the real floor
+            u.maanTaso = 0f
+            u.osuma(u.keskipiste, V3(0f, 0f, -2f))
+            repeat(25) { u.paivita(dt) }
+            assertTrue(u.kiinni)
+        }
+    }
+
+    @Test
+    fun kaikkiTyypitPyorivatHuoneessa() {
+        val peli = Peli(7)
+        peli.maailma.asetaPinnat(Huone.pinnat())
+        peli.ukkojaKerralla = 3
+        val k = Kamera(V3(0f, 0.7f, 1.7f), Kehys.luo(V3(0f, -0.28f, -1f)), 0.53f, 0.5f)
+        val rnd = kotlin.random.Random(2)
+        val nahdyt = HashSet<Tyyppi>()
+        var seinalla = false
+        repeat(60 * 600) { ruutu ->
+            if (ruutu % 100 == 50) {
+                PalloLaji.entries.filter { peli.reppu[it] > 0 }.random(rnd).let { peli.reppu.valitse(it) }
+                peli.heita(Heitto(rnd.nextFloat() - 0.5f, rnd.nextFloat() * 0.6f - 0.3f, rnd.nextFloat(), rnd.nextFloat() * 2f - 1f), k)
+            }
+            peli.paivita(dt, k)
+            for (u in peli.ukot) {
+                nahdyt += u.ulkonako.tyyppi
+                if (u.seinalla && u.ulkonako.tyyppi != Tyyppi.KATTO) seinalla = true
+                val p = u.keskipiste
+                assertTrue(p.x.isFinite() && p.y.isFinite() && p.z.isFinite(), "ruutu $ruutu: ${u.ulkonako.tyyppi} ei ole luku")
+                assertTrue(kotlin.math.abs(p.x) < 2.6f && kotlin.math.abs(p.z) < 2.6f && p.y > -0.2f && p.y < 2.7f, "ruutu $ruutu: ${u.ulkonako.tyyppi} karkasi huoneesta: $p")
+            }
+            assertTrue(peli.pallot.size <= 12 && peli.ukot.size <= 9)
+        }
+        // The rarest may well not turn up in ten minutes, but most kinds must
+        assertTrue(nahdyt.size >= 8, "kymmenessä minuutissa nähtiin vain $nahdyt")
+        assertTrue(seinalla, "kukaan ei kiivennyt seinälle")
+        assertTrue(peli.keratyt >= 5, "kerättyjä vain ${peli.keratyt}")
     }
 
     @Test

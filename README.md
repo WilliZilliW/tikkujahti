@@ -28,9 +28,17 @@ liikettä ja ilmettä kokeilla napista, myös hidastettuna.
 - Pallo pomppii lattiasta, seinistä ja huonekaluista, joten ukkoon voi osua myös pompun kautta.
 - Ukot näkevät pallon tulevan: taitavat väistävät hyppäämällä tai kyykistymällä ja tuulettavat
   tai kiusoittelevat perään. Läheltä mennyt pallo säikäyttää.
-- Ukkoja on erilaisia: nopea juoksija ei pysy paikallaan, iso ukko vaatii kolme osumaa ja harvinainen
-  kultainen väistää melkein kaiken. Peräkkäiset kiinniotot ilman hutia kasvattavat pistekerrointa, ja
-  löydetyt ukot kertyvät albumiin.
+- **Ukkoja on yksitoista erilaista.** Nopea juoksija väistää kaiken, kunnes sen hidastaa. Iso ukko vaatii
+  kolme osumaa. Kiipeilijä ja ninja nousevat seinille, kattoukko roikkuu katossa pää alaspäin ja
+  laskuvarjo-ukko leijuu alas. Kilpi-ukkoon pitää osua takaa tai pompun kautta. Piiloukosta näkyvät vain
+  silmät. Lauma-ukot kulkevat kolmistaan, ja kun yksi jää kiinni, muut karkaavat. Ninja torjuu kaiken paitsi
+  verkon, ja kultaisen saa vain kultaisella pallolla. Erikoiset ukot viipyvät vain hetken.
+- **Erikoispalloja** löytyy huoneesta kimaltelemasta: osu sellaiseen millä tahansa pallolla, niin saat sen
+  reppuusi (enintään viisi kerrallaan). Verkkopalloa ei voi väistää, tutka paljastaa piiloukot, hidastuspallo
+  hidastaa, monipallo hajoaa kolmeksi, hakeutuva kääntyy itse kohti ukkoa, pomppupallo nappaa vielä monen
+  pompun jälkeen ja tahmapallo liimaa ukon paikalleen. Pallo valitaan ruudun oikeasta alakulmasta.
+- Peräkkäiset kiinniotot ilman hutia kasvattavat pistekerrointa, ja löydetyt ukot kertyvät albumiin, jossa
+  löytymättömistä on vihje.
 - Sovelluksessa: liikuttele puhelinta hitaasti ja osoita lattiaa, niin ukot ilmestyvät, kun lattia on
   tunnistettu. Selaimen AR-tilassa napauta lattiaa, kun rengas näkyy.
 - Selaimen huoneessa: vedä ruudun yläosasta katsellaksesi ympärillesi.

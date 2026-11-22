@@ -55,6 +55,13 @@ class Asento {
     var paksuus = 1f
     val kasvot = Kasvot()
     var nakyvissa = true
+    /** How far the figure's accessory is out: an open parachute is 1, a folded one 0. */
+    var varuste = 1f
+    /** An invisible figure: only the face is drawn. */
+    var haamu = false
+    /** Where the body faces and which way is up for it (the normal of the surface it stands on). */
+    var eteen = V3.Z
+    var ylos = V3.Y
 
     operator fun get(n: Nivel) = nivelet[n.ordinal]
     operator fun set(n: Nivel, v: V3) {
