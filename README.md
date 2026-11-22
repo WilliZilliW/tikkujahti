@@ -7,6 +7,10 @@ Peli on tehty kokonaan koodilla Claude Coden pilviympäristössä: ukkojen malli
 äänet lasketaan ohjelmallisesti, eikä mukana ole yhtään piirrettyä kuvaa tai äänitiedostoa.
 Koko suunnitelma on [issuessa #1](../../issues/1).
 
+**Pelin tarkoitus:** kulje puhelin kädessä ympäri taloa, etsi ukkoja ja erilaisia palloja ja nappaa
+jokaista eri ukkoa mahdollisimman monta. Ukot pysyttelevät omilla paikoillaan nurkissa, tasojen alla ja
+selkäsi takana; kun jokin ääntelee näkymän ulkopuolella, ruudun reunaan välähtää nuoli sen suuntaan.
+
 ## Kolme tapaa pelata
 
 | | Missä | Mitä tarvitaan |

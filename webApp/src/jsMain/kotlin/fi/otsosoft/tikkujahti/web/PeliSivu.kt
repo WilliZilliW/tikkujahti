@@ -8,7 +8,9 @@ import fi.otsosoft.tikkujahti.maailma.Pinta
 import fi.otsosoft.tikkujahti.matikka.Kehys
 import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.matikka.pehmea
+import fi.otsosoft.tikkujahti.peli.Aani
 import fi.otsosoft.tikkujahti.peli.Albumi
+import fi.otsosoft.tikkujahti.peli.Tapahtuma
 import fi.otsosoft.tikkujahti.peli.Heitto
 import fi.otsosoft.tikkujahti.peli.Kamera
 import fi.otsosoft.tikkujahti.peli.Pallo
@@ -78,6 +80,7 @@ class PeliSivu(private val juuri: HTMLElement) {
     private val putki = el("div", "putki", hud)
     private val vihje = el("div", "vihje", hud)
     private val ilmoitus = el("div", "ilmoitus", hud)
+    private val nuolet = el("div", "nuolet", hud)
     private val pallorivi = el("div", "pallorivi", hud)
     private var ilmoitusAjastin = 0
     private val napit = el("div", "ylanapit", hud)
@@ -119,9 +122,24 @@ class PeliSivu(private val juuri: HTMLElement) {
         for (t in peli.tapahtumat) {
             aanet.soita(t, kamera.paikka)
             t.teksti?.let { ilmoita(it) }
+            if (t.laji == Aani.AANTELY || (t.laji == Aani.KIMALLUS && t.teksti == null)) vihjenuoli(t)
         }
         naytaPisteet()
         nakyma.piirra()
+    }
+
+    /**
+     * Something out of view made a sound: an arrow flashes at the edge of the screen towards it. This is how
+     * the player "hears" which way to turn when hunting about the house.
+     */
+    private fun vihjenuoli(t: Tapahtuma) {
+        val (x, y, nakyvissa) = kamera.ruudulla(t.paikka)
+        if (nakyvissa || nuolet.childElementCount >= 3) return
+        val n = el("div", if (t.laji == Aani.KIMALLUS) "nuoli pallo" else "nuoli", nuolet)
+        n.style.left = "${(x * 0.5 + 0.5) * 86 + 7}%"
+        n.style.top = "${(0.5 - y * 0.5) * 86 + 7}%"
+        n.style.transform = "translate(-50%, -50%) rotate(${kotlin.math.atan2(x.toDouble(), y.toDouble()) * 180 / PI}deg)"
+        window.setTimeout({ n.asDynamic().remove() }, 1700)
     }
 
     /** A note that slides in for a few seconds: what was found, why a ball bounced off. */
@@ -317,6 +335,7 @@ class PeliSivu(private val juuri: HTMLElement) {
         val kortti = el("div", "kortti", tausta)
         val a = peli.albumi
         el("h2", "", kortti).textContent = "Ukkoalbumi ${a.loydetty}/${Tyyppi.entries.size}"
+        el("div", "pieni", kortti).textContent = "Napattu yhteensä ${a.yhteensa}. Kierrä taloa ja etsi jokaista lajia mahdollisimman monta."
         for (t in Tyyppi.entries) {
             val rivi = el("div", if (a[t] > 0) "ukkorivi" else "ukkorivi puuttuu", kortti)
             el("div", "kuvake", rivi).style.setProperty("--v", css(albumiVari(t)))
@@ -350,6 +369,9 @@ class PeliSivu(private val juuri: HTMLElement) {
             osumalahteet.clear()
             uusiPeli()
             peli.ilmoitaLoydot = true
+            // In AR the player walks about the house looking for figures and balls
+            peli.etsinta = true
+            peli.ukkojaKerralla = 4
             huone.visible = false
             document.body?.classList?.add("ar-tila")
             arNappi?.textContent = "Lopeta AR"
@@ -458,7 +480,7 @@ class PeliSivu(private val juuri: HTMLElement) {
         asetaValo(lattia.keskus)
         if (!arLattia) {
             arLattia = true
-            vihje.textContent = "Pyyhkäise ylöspäin heittääksesi pallon. Katsele ympärillesi: peli oppii huoneen."
+            vihje.textContent = "Ukkoja ja palloja on ympäri taloa: kulje ja etsi. Pyyhkäise ylöspäin heittääksesi."
         }
     }
 

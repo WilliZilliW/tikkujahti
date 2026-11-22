@@ -124,3 +124,14 @@ body.kuva .nakyma { bottom: 0 !important; left: 0 !important; }
   opacity: 0; transform: translate(-50%, 12px); transition: opacity .25s, transform .25s;
 }
 .ilmoitus.nakyy { opacity: 1; transform: translate(-50%, 0); }
+
+/* Arrows at the edge of the screen: something out of view made a sound */
+.nuolet { position: absolute; inset: 0; pointer-events: none; }
+.nuoli {
+  position: absolute; width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent;
+  border-bottom: 24px solid rgba(255, 252, 245, .95); filter: drop-shadow(0 1px 3px rgba(40, 30, 60, .5));
+  animation: nuoli 1.7s ease-out forwards;
+}
+.nuoli.pallo { border-bottom-color: #ffc93c; }
+@keyframes nuoli { 0% { opacity: 0; } 12% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
+.kortti > .pieni { font-size: 13px; opacity: .7; margin-top: -6px; }

@@ -689,6 +689,48 @@ class PeliTest {
     }
 
     @Test
+    fun etsintapelissaUkotOvatYmparillaJaVaihtuvatKunKuljetaan() {
+        val peli = Peli(4)
+        peli.etsinta = true
+        peli.ukkojaKerralla = 4
+        peli.aarteita = false
+        val haku = LattianHaku()
+        var paikka = V3(0f, 1.3f, 0f)
+        fun kam() = Kamera(paikka, Kehys.luo(V3(0f, -0.4f, -1f)), 0.6f, 0.5f)
+        haku.ruutu(dt, paikka, 0f)
+        fun aja(sekunteja: Float) = repeat((sekunteja * 60).toInt()) {
+            peli.maailma.asetaPinnat(listOf(assertNotNull(haku.lattia(paikka))))
+            peli.paivita(dt, kam())
+        }
+        aja(25f)
+        assertTrue(peli.ukot.size >= 3, "ukkoja vain ${peli.ukot.size}")
+        // All around, not lined up in front: some are out of view, and they keep to their own spots
+        val poissaNakyvista = peli.ukot.count { !kam().ruudulla(it.keskipiste).third }
+        assertTrue(poissaNakyvista >= 1, "kaikki ukot olivat suoraan näkyvissä")
+        val kodit = peli.ukot.filter { it.koti != null }
+        assertTrue(kodit.isNotEmpty())
+        aja(20f)
+        for (u in kodit) if (u in peli.ukot && u.ulkonako.tyyppi != Tyyppi.LAUMA) {
+            assertTrue((u.juuri - u.koti!!).vaakaan().pituus < 1.6f, "${u.ulkonako.tyyppi} harhaili ${(u.juuri - u.koti!!).pituus} m kotoaan")
+        }
+        // Walk to another room: the old ones are let go, new ones turn up around the player
+        val vanhat = peli.ukot.toSet()
+        paikka = V3(12f, 1.3f, 3f)
+        aja(25f)
+        assertTrue(peli.ukot.none { it in vanhat }, "taakse jääneet ukot eivät lähteneet")
+        assertTrue(peli.ukot.size >= 3)
+        for (u in peli.ukot) assertTrue((u.juuri - paikka).vaakaan().pituus < Peli.JATTOMATKA, "ukko liian kaukana pelaajasta")
+
+        // The screen-edge hint: in view, off to the right, behind
+        val k = Kamera(V3.NOLLA, Kehys.luo(-V3.Z), 0.6f, 0.5f)
+        assertTrue(k.ruudulla(V3(0f, 0f, -2f)).third)
+        val oikealla = k.ruudulla(V3(3f, 0f, -1f))
+        assertTrue(!oikealla.third && oikealla.first == 1f && kotlin.math.abs(oikealla.second) < 0.2f)
+        val takana = k.ruudulla(V3(-1f, 0f, 3f))
+        assertTrue(!takana.third && takana.first == -1f)
+    }
+
+    @Test
     fun albumiSailyyTallennuksessa() {
         val a = Albumi()
         a.lisaa(Tyyppi.ISO); a.lisaa(Tyyppi.TAVALLINEN); a.lisaa(Tyyppi.TAVALLINEN)

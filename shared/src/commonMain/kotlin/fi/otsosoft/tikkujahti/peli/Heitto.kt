@@ -16,6 +16,24 @@ class Kamera(var paikka: V3, var kehys: Kehys, var tanPuoliFov: Float, var kuvas
     /** Direction into the world through a point on the screen: x and y from -1 to 1, y up. */
     fun sade(x: Float, y: Float): V3 =
         (kehys.eteen + kehys.oikealle * (x * tanPuoliFov * kuvasuhde) + kehys.ylos * (y * tanPuoliFov)).suunta()
+
+    /**
+     * Where the point [p] is on the screen (x and y from -1 to 1, y up) and whether it is in view. For a point
+     * out of view, the position is where on the edge of the screen it lies towards: the place for an arrow.
+     */
+    fun ruudulla(p: V3): Triple<Float, Float, Boolean> {
+        val d = p - paikka
+        val z = d dot kehys.eteen
+        var x = (d dot kehys.oikealle) / (tanPuoliFov * kuvasuhde)
+        var y = (d dot kehys.ylos) / tanPuoliFov
+        if (z > 1e-3f) {
+            x /= z; y /= z
+            if (kotlin.math.abs(x) < 1f && kotlin.math.abs(y) < 1f) return Triple(x, y, true)
+        }
+        // Out of view, to the side or behind: push the direction out to the edge
+        val suurin = maxOf(kotlin.math.abs(x), kotlin.math.abs(y)).coerceAtLeast(1e-4f)
+        return Triple(x / suurin, y / suurin, false)
+    }
 }
 
 /**

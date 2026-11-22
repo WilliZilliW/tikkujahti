@@ -78,6 +78,11 @@ class Ukko(
     var lattia: Pinta?
         get() = pintaM
         set(p) = asetaPinta(p)
+    /**
+     * The figure's own spot in the world. With one, it keeps to its neighbourhood for the player to come and
+     * find, instead of following the player about.
+     */
+    var koti: V3? = null
     /** World height of the real floor, where a knocked figure falls to. */
     var maanTaso: Float? = null
     private var pintaM: Pinta? = null
@@ -664,7 +669,10 @@ class Ukko(
             var p = juuriL + V3.suunnasta(kulma) * pituus
             if (l != null) p = l.lahinPiste(p, 0.06f)
             var pisteet = 0f
-            katsojaL?.let { k ->
+            val kotiL = koti?.let { paikalliseen(it) }
+            if (kotiL != null) {
+                pisteet -= max(0f, (p - kotiL).vaakaan().pituus - 0.6f) * 2f
+            } else katsojaL?.let { k ->
                 val d = (p.vaakaan() - k.vaakaan()).pituus
                 val toivottu = 0.9f + luonne.ujous * 1.0f
                 pisteet -= abs(d - toivottu)

@@ -52,7 +52,10 @@ import fi.otsosoft.tikkujahti.maailma.Tunnistin
 import fi.otsosoft.tikkujahti.matikka.Kehys
 import fi.otsosoft.tikkujahti.matikka.V3
 import fi.otsosoft.tikkujahti.matikka.pehmea
+import fi.otsosoft.tikkujahti.peli.Aani
 import fi.otsosoft.tikkujahti.peli.Albumi
+import androidx.compose.ui.BiasAlignment
+import androidx.compose.ui.draw.rotate
 import fi.otsosoft.tikkujahti.peli.Heitto
 import fi.otsosoft.tikkujahti.peli.Kamera
 import fi.otsosoft.tikkujahti.peli.PalloLaji
@@ -96,6 +99,9 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
     init {
         peli.pyristely = true
         peli.ilmoitaLoydot = true
+        // The player walks about the house looking for figures and balls
+        peli.etsinta = true
+        peli.ukkojaKerralla = 4
     }
     private var seuranta = false
 
@@ -108,6 +114,13 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         private set
     /** There is a floor to play on, real or guessed. */
     var pelissa = false
+        private set
+    /** An arrow at the edge of the screen (x, y from -1 to 1, y up) towards something heard out of view. */
+    class Nuoli(val x: Float, val y: Float, val pallo: Boolean, val loppu: Long)
+
+    val nuolet = ArrayList<Nuoli>()
+    /** Grows with every new arrow, so the screen knows to redraw them. */
+    var nuolia = 0
         private set
     private val haku = LattianHaku()
     private val tunnistin = Tunnistin()
@@ -156,9 +169,18 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         }
         pelissa = peli.maailma.lattia != null
         peli.paivita(dt, kamera)
+        nuolet.removeAll { it.loppu < nyt }
         for (t in peli.tapahtumat) {
             aanet.soita(t, kamera.paikka)
             t.teksti?.let { ilmoita(it) }
+            // Something out of view made a sound: an arrow at the edge of the screen shows which way to turn
+            if (t.laji == Aani.AANTELY || (t.laji == Aani.KIMALLUS && t.teksti == null)) {
+                val (x, y, nakyvissa) = kamera.ruudulla(t.paikka)
+                if (!nakyvissa && nuolet.size < 3) {
+                    nuolet += Nuoli(x, y, t.laji == Aani.KIMALLUS, nyt + 1_700_000_000L)
+                    nuolia++
+                }
+            }
         }
         if (peli.albumi.muutoksia + peli.reppu.muutoksia != tallennettu) {
             tallennettu = peli.albumi.muutoksia + peli.reppu.muutoksia
@@ -233,6 +255,7 @@ fun PeliNakyma() {
         }
     }
     var ilmoituksia by remember { mutableIntStateOf(0) }
+    var nuolia by remember { mutableIntStateOf(0) }
     var reppuMuutos by remember { mutableIntStateOf(0) }
     var valittu by remember { mutableStateOf(PalloLaji.NORMI) }
     var ilmoitusNakyy by remember { mutableStateOf(false) }
@@ -282,6 +305,7 @@ fun PeliNakyma() {
                 pisteet = tila.peli.pisteet
                 kerroin = tila.peli.kerroin
                 ilmoituksia = tila.ilmoituksia
+                nuolia = tila.nuolia + tila.nuolet.size * 100000
                 reppuMuutos = tila.peli.reppu.muutoksia
                 valittu = tila.peli.reppu.valittu
                 heitot = tila.peli.heitot
@@ -315,7 +339,7 @@ fun PeliNakyma() {
             )
             val vihje = when {
                 !pelissa -> "Katsele puhelimella lattiaa: ukot tulevat kohta esiin."
-                heitot < 2 -> "Pyyhkäise ylöspäin heittääksesi pallon."
+                heitot < 2 -> "Ukkoja ja palloja on ympäri taloa: kulje ja etsi. Pyyhkäise ylöspäin heittääksesi."
                 else -> null
             }
             if (vihje != null) {
@@ -349,6 +373,14 @@ fun PeliNakyma() {
                 }
             }
         }
+        // (reading nuolia redraws this when arrows come and go)
+        if (nuolia >= 0) for (n in tila.nuolet.toList()) {
+            Text(
+                "▲",
+                Modifier.align(BiasAlignment(n.x * 0.88f, -n.y * 0.88f)).rotate(Math.toDegrees(kotlin.math.atan2(n.x.toDouble(), n.y.toDouble())).toFloat()),
+                color = if (n.pallo) Color(0xFFFFC93C) else Color(0xF2FFFCF5), fontSize = 30.sp,
+            )
+        }
         if (ilmoitusNakyy) {
             Text(
                 tila.ilmoitus.orEmpty(),
@@ -373,6 +405,7 @@ fun AlbumiNakyma(albumi: Albumi, @Suppress("UNUSED_PARAMETER") keratyt: Int, sul
         ) {
             val tumma = Color(0xFF2A2630)
             Text("Ukkoalbumi ${albumi.loydetty}/${Tyyppi.entries.size}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = tumma)
+            Text("Napattu yhteensä ${albumi.yhteensa}. Kierrä taloa ja etsi jokaista lajia mahdollisimman monta.", fontSize = 13.sp, color = tumma.copy(alpha = 0.7f))
             for (t in Tyyppi.entries) {
                 val maara = albumi[t]
                 val vari = when (t) {

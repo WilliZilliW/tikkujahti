@@ -67,6 +67,7 @@ class LattianHaku {
         const val OLETUSKORKEUS = 1.25f
         /** A surface nearer than this below the phone is taken for a table, not the floor. */
         const val VAHIMMAISKORKEUS = 0.45f
-        const val SADE = 3.0
+        /** Wide enough that figures a few rooms' corners away still have floor under them. */
+        const val SADE = 7.0
     }
 }

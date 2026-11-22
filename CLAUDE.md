@@ -4,6 +4,12 @@ Android-AR-peli (Otsosoft): oikeassa huoneessa liikkuu ilmeikkäitä tikku-ukkoj
 pyyhkäisemällä. Koko suunnitelma ja päätökset: issue #1. Peli tehdään kokonaan Claude Coden pilviympäristössä,
 joten kaikki grafiikka ja äänet tehdään koodilla. Kommentit koodissa englanniksi, nimet suomeksi.
 
+## Pelin tarkoitus (omistajan sanoin 22.11.2026)
+Kuljet puhelin kädessä ympäri taloa etsimässä ukkoja ja erilaisia palloja ja nappaat jokaista eri ukkoa
+mahdollisimman monta. Peli on siis etsintäpeli: ukkojen ja pallojen pitää olla löydettävissä eri puolilta,
+ei tarjoiltuna suoraan eteen. Alussa ei saa joutua tekemään mitään (ei lattian napautusta), ja pelin pitää
+tunnistaa ympäristöä aktiivisesti. Arvioi uudet ominaisuudet tätä vasten.
+
 ## Rakenne
 - `shared/` – Kotlin Multiplatform (jvm + js): pelilogiikka, ukot, fysiikka, mallien generointi. Ei alustakoodia.
 - `androidApp/` – ARCore + SceneView (lukittu 4.66.0, `gradle/libs.versions.toml`; SceneView julkaisee lähes
@@ -86,6 +92,13 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
 - **Pyristely:** harvinaisempi ukko voi pyristellä pallossa (`PallonTila.PYRISTELEE`, 2,2 s): pelaajan pitää
   napauttaa palloa (`Peli.napauta`), muuten ukko karkaa. Päällä vain kun `peli.pyristely = true` (alustat
   kytkevät; testeissä ja labrassa pois).
+- **Etsintäpeli** (`Peli.etsinta`, päällä AR:ssä selaimessa ja sovelluksessa, 4 ukkoa kerralla): ukot
+  ilmestyvät pelaajan ympärille 1,2–4 m päähän, useimmiten näkymän ulkopuolelle ja mielellään tunnistettuihin
+  paikkoihin, ei tunnetun seinän taakse (`paikkaEtsittava`). Jokaisella on `Ukko.koti`, jonka lähellä se
+  pysyy. Yli `JATTOMATKA` (6,5 m) taakse jääneet ukot ja pallot poistuvat ja uusia tulee sinne, missä pelaaja
+  on. Lattia on 7 m säteinen kiekko pelaajan mukana (`LattianHaku.SADE`). Kun näkymän ulkopuolella oleva ukko
+  ääntelee tai pallo kimaltaa, ruudun reunaan välähtää nuoli sen suuntaan (`Kamera.ruudulla`). Selaimen
+  huoneessa etsintä on pois: ukot tulevat pelaajan eteen.
 - Erikoisukot lähtevät itse pois `VIERAILU` (40 s) jälkeen, erikoisia on paikalla yksi kerrallaan.
 - Ninja ilmestyy ninjamaisesti (omistajan toive): varjosta, nurkasta tai kolosta savupilven kera
   (`Peli.ninjanPaikka`, `savu`), muuten pudottautuu katosta tai ylhäältä. Lähtiessään se katoaa savuna
@@ -128,6 +141,8 @@ ja tarkista, että ajot menivät läpi.
 - WebXR: omistaja on käynnistänyt AR-tilan puhelimella (lattian napautus toimi; se korvattiin sittemmin
   automaattisella haulla, jota ei ole laitteella kokeiltu). Tarkistamatta: osuuko arvattu/löydetty lattia
   kohdalleen, pyyhkäisy dom-overlayn läpi, varjo (`ShadowMaterial`).
+- Etsintäpeli: tuntuuko etsiminen hyvältä talossa (matkat 1,2–4 m, 6,5 m, 4 ukkoa), ilmestyykö ukkoja seinien
+  läpi viereiseen huoneeseen (tunnistamattoman seinän taakse voi ilmestyä), auttavatko reunanuolet sopivasti.
 - Ympäristön tunnistus: syntyykö pöydistä, seinistä ja katosta pintoja katselemalla, osuvatko ääriviivat
   kohdalleen, löytyykö varjoisia kohtia (Android), häiritseekö DepthMode AUTOMATIC mitään.
 - Heiton tuntuma (`Pyyhkaisy.lopeta`, `Peli.heita`: vauhti 3,2–7,5 m/s, `TAHTAYSAPU`, `OSUMA_APU`) ja

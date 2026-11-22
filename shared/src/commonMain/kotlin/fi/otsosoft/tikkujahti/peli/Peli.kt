@@ -93,6 +93,13 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
      * to keep it. Platforms that pass taps on switch this on.
      */
     var pyristely = false
+    /**
+     * The real game: the player walks about the house, phone in hand, looking for figures and balls. Figures
+     * turn up all around, each keeping to its own spot, also out of sight and in the room's nooks and corners;
+     * the ones left far behind go, and new ones appear where the player is now. When off, figures turn up in
+     * front of the player and stay in view (the browser's room, where the player cannot walk).
+     */
+    var etsinta = false
     /** Whether to tell the player when a new kind of surface or spot is recognised (AR, where the room is unknown). */
     var ilmoitaLoydot = false
     private var paikkaAjastin = 0f
@@ -194,7 +201,9 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
             if (!u.kiinni) u.lattia = pintaUkolle(u, lattia)
             u.maanTaso = lattia?.keskus?.y
             u.katsoja = kamera.paikka
-            u.katsojanSuunta = kamera.kehys.eteen
+            u.katsojanSuunta = if (etsinta) null else kamera.kehys.eteen
+            // Left behind in another room: gone, so that there is always something where the player is now
+            if (etsinta && !u.kiinni && (u.juuri - kamera.paikka).vaakaan().pituus > JATTOMATKA) u.katoa()
             var lahin: Pallo? = null
             for (pallo in pallot) {
                 if (pallo.tila != PallonTila.LENTAA) continue
@@ -357,7 +366,11 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
                 continue
             }
             laumaAjastimet[ryhma] = 2.5f + rnd.nextFloat() * 3f
-            val kohde = paikkaNakyvissa(kamera, lattia, emptyList()) ?: continue
+            val kohde = (if (etsinta) {
+                // The herd roams around where it is, not after the player
+                val keski = jasenet.fold(V3.NOLLA) { a, u -> a + u.juuri } / jasenet.size.toFloat()
+                lattia.lahinPiste(keski + V3.suunnasta(rnd.nextFloat() * 6.28f) * (0.4f + rnd.nextFloat() * 0.8f), 0.12f)
+            } else paikkaNakyvissa(kamera, lattia, emptyList())) ?: continue
             val juosten = rnd.nextFloat() < 0.4f
             for ((k, u) in jasenet.withIndex()) {
                 val kulma = k * 2f * PI.toFloat() / 3f + ryhma
@@ -663,7 +676,8 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         }
         aarteet.removeAll { it.ika > AARTEEN_IKA }
         aarreAjastin -= dt
-        if (aarreAjastin > 0f || aarteet.size >= 2) return
+        if (etsinta) aarteet.removeAll { (it.paikka - kamera.paikka).vaakaan().pituus > JATTOMATKA + 1f }
+        if (aarreAjastin > 0f || aarteet.size >= (if (etsinta) 3 else 2)) return
         aarreAjastin = 14f + rnd.nextFloat() * 14f
         // More often than not, the ball that suits a figure that is out right now
         val sopivat = ukot.filter { !it.kiinni }.mapNotNull { sopivaPallo(it.ulkonako.tyyppi) }.filter { reppu[it] == 0 }
@@ -708,10 +722,47 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         val paikat = maailma.paikat.filter { p ->
             val ero = (p.piste - kamera.paikka).vaakaan()
             // Shadows first; all of them in front of the player, not too near and not too far
-            p.lattialla && ero.pituus in 0.8f..4.5f && (ero.suunta() dot eteen) > 0.3f && ukot.none { (it.juuri - p.piste).pituus < 0.3f }
+            p.lattialla && ero.pituus in 0.8f..4.5f && (etsinta || (ero.suunta() dot eteen) > 0.3f) && ukot.none { (it.juuri - p.piste).pituus < 0.3f }
         }
         val varjot = paikat.filter { it.laji == PaikanLaji.VARJO }
         return (if (varjot.isNotEmpty() && rnd.nextFloat() < 0.7f) varjot else paikat).randomOrNull(rnd)?.piste?.let { lattia.lahinPiste(it, 0.06f) }
+    }
+
+    /** Whether anything known (a wall, a table's side) stands between two points. */
+    private fun esteeton(a: V3, b: V3): Boolean {
+        val d = b - a
+        for (pinta in maailma.pinnat) {
+            if (pinta.laji != PinnanLaji.SEINA) continue
+            val da = pinta.etaisyys(a)
+            val db = pinta.etaisyys(b)
+            if (da * db >= 0f) continue
+            if (pinta.sisalla(a + d * (da / (da - db)))) return false
+        }
+        return true
+    }
+
+    /**
+     * A spot for a figure to be found at: somewhere around the player, most often out of view and by choice
+     * in one of the room's corners, nooks and shadows, but not behind a known wall.
+     */
+    private fun paikkaEtsittava(kamera: Kamera, lattia: Pinta): V3? {
+        val eteen = kamera.kehys.eteen.vaakaan().suunta(V3.Z)
+        val nakokentta = atan(kamera.tanPuoliFov * kamera.kuvasuhde)
+        fun kelpaa(p: V3): Boolean {
+            val ero = (p - kamera.paikka).vaakaan()
+            return ero.pituus in 1.2f..4f && ukot.none { (it.juuri - p).vaakaan().pituus < 0.5f } && esteeton(kamera.paikka, p + V3.Y * 0.15f)
+        }
+        val paikat = maailma.paikat.filter { it.lattialla && kelpaa(it.piste) }
+        if (paikat.isNotEmpty() && rnd.nextFloat() < 0.5f) return lattia.lahinPiste(paikat.random(rnd).piste, 0.06f)
+        val piiloon = rnd.nextFloat() < 0.7f
+        for (yritys in 0 until 24) {
+            val suunta = kierra(eteen, V3.Y, (rnd.nextFloat() - 0.5f) * 2f * PI.toFloat())
+            // Mostly where the player is not looking just now
+            if (piiloon && yritys < 16 && kulmaValilla(suunta, eteen) < nakokentta * 1.3f) continue
+            val p = lattia.lahinPiste(V3(kamera.paikka.x, lattia.keskus.y, kamera.paikka.z) + suunta * (1.5f + rnd.nextFloat() * 2f), 0.12f)
+            if (kelpaa(p)) return p
+        }
+        return null
     }
 
     /** A free spot on the floor in front of the player. */
@@ -749,7 +800,7 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
     }
 
     private fun uusiUkko(kamera: Kamera, lattia: Pinta) {
-        val p = paikkaNakyvissa(kamera, lattia, ukot) ?: return
+        val p = (if (etsinta) paikkaEtsittava(kamera, lattia) else paikkaNakyvissa(kamera, lattia, ukot)) ?: return
         var vari = rnd.nextInt(Ulkonako.VARIT.size)
         if (vari == edellinenVari) vari = (vari + 1) % Ulkonako.VARIT.size
         edellinenVari = vari
@@ -758,6 +809,8 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
             val u = Ukko(seuraavaId++, luoUlkonako(tyyppi, Ulkonako.VARIT[vari], rnd), paikka, suuntakulma((kamera.paikka - paikka).vaakaan()), rnd.nextInt(), alkuKorkeus = korkeus, pinta = pinta)
             u.maanTaso = lattia.keskus.y
             u.katsoja = kamera.paikka
+            // To be looked for, a figure has to stay somewhere (the wall climbers have their own routes)
+            if (etsinta && pinta === lattia && tyyppi != Tyyppi.KIIPEILIJA && tyyppi != Tyyppi.NINJA) u.koti = paikka
             ukot += u
             return u
         }
@@ -804,6 +857,8 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
 
     companion object {
         const val SUURIN_KERROIN = 5
+        /** In the searching game, a figure this far behind the player is let go. */
+        const val JATTOMATKA = 6.5f
         val SAVU = Vari.hex(0x6B6875)
         /** How long the player has to tap a ball with a struggling figure in it, seconds. */
         const val PYRISTELYAIKA = 2.2f
