@@ -73,9 +73,9 @@ normaaleista; puskureita kierrätetään, koska Filament lukee ne myöhemmin oma
 (AudioTrack-mikseri). SceneViewin lähteet: `arsceneview-4.66.0-sources.jar` ja `sceneview-4.66.0-sources.jar`
 Maven Centralista (`io/github/sceneview/`).
 
-`.github/workflows/`: `apk.yml`, `julkaisu.yml`, `pages.yml`. **Ne käynnistyvät `main`-haarasta, jota ei vielä
-ole** (oletushaara on vanha `ccr-abe38453-zavzha`): omistajan pitää luoda `main` ja tehdä siitä oletushaara,
-kytkeä Pages päälle (Settings → Pages → Source: GitHub Actions) ja lisätä julkaisun salaisuudet.
+`.github/workflows/`: `apk.yml` (testi-APK rullaavaan `testi`-esijulkaisuun), `pages.yml` (selainversio
+GitHub Pagesiin), `julkaisu.yml` (AAB tagista; salaisuudet vielä lisäämättä). Oletushaara on `main`, Pages on
+päällä, ja molemmat ajot menivät läpi ensimmäisestä `main`-pushista. Julkaisu: työnnä `main`iin.
 
 ## Tarkistettava laitteella (ei voi pilvessä)
 - Android: näkyvätkö ukot ja pallot (materiaali `createColorInstance`, TANGENTS-kvaterniot), varjo lattialla
