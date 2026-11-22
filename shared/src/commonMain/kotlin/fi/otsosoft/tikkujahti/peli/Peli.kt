@@ -12,6 +12,7 @@ import fi.otsosoft.tikkujahti.matikka.pehmea
 import fi.otsosoft.tikkujahti.matikka.saturoi
 import fi.otsosoft.tikkujahti.matikka.suuntakulma
 import fi.otsosoft.tikkujahti.ukko.Aantely
+import fi.otsosoft.tikkujahti.ukko.Harvinaisuus
 import fi.otsosoft.tikkujahti.ukko.Luonne
 import fi.otsosoft.tikkujahti.ukko.Nivel
 import fi.otsosoft.tikkujahti.ukko.Toiminto
@@ -26,7 +27,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
-enum class Aani { HEITTO, POMPPU, OSUMA, KERAYS, AANTELY, TORJUNTA, TUTKA, HIDASTUS, LIIMA, POIMINTA, KIMALLUS }
+enum class Aani { HEITTO, POMPPU, OSUMA, KERAYS, AANTELY, TORJUNTA, TUTKA, HIDASTUS, LIIMA, POIMINTA, KIMALLUS, PYRISTELY, KARKASI }
 
 /**
  * Something that happened this frame, for sounds and effects.
@@ -85,6 +86,11 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
     var tyypit: List<Tyyppi> = Tyyppi.entries
     /** How many figures (or herds) are out at once. */
     var ukkojaKerralla = 2
+    /**
+     * Whether a caught figure may struggle in the ball, so that the player has to tap the ball ([napauta])
+     * to keep it. Platforms that pass taps on switch this on.
+     */
+    var pyristely = false
     /** Whether special balls turn up in the room. */
     var aarteita = true
 
@@ -138,7 +144,27 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
                     pallo.koko = 1f + 0.35f * kumpu(pallo.tilaAika / 0.25f)
                     pallo.p += V3.Y * (0.05f * dt * (1f - saturoi(pallo.tilaAika / 1.0f)))
                     u?.pallonKeskus = pallo.p
-                    if (u == null || u.valmis) pallo.vaihda(PallonTila.PALAA)
+                    if (u == null || u.valmis) {
+                        // The rarer the figure, the likelier it puts up a fight
+                        val sisu = when (u?.ulkonako?.tyyppi?.harvinaisuus) {
+                            null -> 0f
+                            Harvinaisuus.TAVALLINEN -> 0.12f
+                            Harvinaisuus.HARVINAINEN -> 0.3f
+                            Harvinaisuus.TOSI_HARVINAINEN -> 0.55f
+                        }
+                        if (pyristely && rnd.nextFloat() < sisu) {
+                            pallo.vaihda(PallonTila.PYRISTELEE)
+                            tapahtumat += Tapahtuma(Aani.PYRISTELY, pallo.p, teksti = "Ukko pyristelee! Napauta palloa nopeasti!")
+                        } else {
+                            pallo.vaihda(PallonTila.PALAA)
+                        }
+                    }
+                }
+                PallonTila.PYRISTELEE -> {
+                    val t = pallo.tilaAika
+                    pallo.koko = 1f + 0.22f * sin(t * 34f)
+                    pallo.pyorita(kamera.kehys.eteen, sin(t * 26f) * 9f * dt)
+                    if (t > PYRISTELYAIKA) karkaa(pallo, kamera)
                 }
                 PallonTila.PALAA -> palaa(pallo, dt, kamera)
                 PallonTila.HAIPUU -> {
@@ -173,6 +199,7 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
                 u.pakene(u.juuri + (if (u.seinalla) V3.Y * 0.6f else pois * 1.2f))
             }
             if (u.ulkonako.tyyppi == Tyyppi.KIIPEILIJA || u.ulkonako.tyyppi == Tyyppi.NINJA) ohjaaKiipeilijaa(u, dt, lattia)
+            istuta(u, dt)
             u.paivita(dt)
             for (a in u.aanet) tapahtumat += Tapahtuma(Aani.AANTELY, u.keskipiste, aantely = a, korkeus = u.ulkonako.aani)
             u.aanet.clear()
@@ -189,7 +216,8 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
     /** The surface a figure should be on now: surfaces are replaced as AR tracking refines them. */
     private fun pintaUkolle(u: Ukko, lattia: Pinta?): Pinta? {
         val vanha = u.lattia ?: return lattia
-        if (!u.seinalla) return lattia
+        // Figures on the floor follow the floor; ones on a table, wall or ceiling stay on theirs while it exists
+        if (vanha.laji == PinnanLaji.LATTIA) return lattia
         return maailma.pinnat.firstOrNull { it.id == vanha.id } ?: omaKatto?.takeIf { it.id == vanha.id } ?: lattia
     }
 
@@ -258,6 +286,18 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         }
     }
 
+    /** Now and then a figure idling on a table top goes to sit on its edge, legs dangling. */
+    private fun istuta(u: Ukko, dt: Float) {
+        val pinta = u.lattia ?: return
+        if (pinta.laji != PinnanLaji.POYTA || !u.omatoiminen || u.toiminto != Toiminto.SEISOO || u.ilmassa) return
+        if (rnd.nextFloat() > dt * 0.35f) return
+        val (reuna, ulos) = pinta.lahinReuna(u.juuri)
+        // Not where a wall or anything else known is in the way of the legs
+        val jalat = reuna + ulos * (0.05f * u.m.koko) - pinta.normaali * (0.06f * u.m.koko)
+        if (maailma.pinnat.any { it !== pinta && abs(it.etaisyys(jalat)) < 0.08f && it.sisalla(jalat, 0.02f) }) return
+        u.istuReunalle(reuna, ulos)
+    }
+
     /** A herd moves as one: every few seconds the whole group heads for a new spot. */
     private fun ohjaaLaumoja(dt: Float, kamera: Kamera, lattia: Pinta) {
         val laumat = ukot.filter { it.ryhma != 0 && !it.kiinni }.groupBy { it.ryhma }
@@ -281,6 +321,41 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
     // =====================================================================================================
     // Balls
     // =====================================================================================================
+
+    /**
+     * The player tapped the screen at ([x], [y]), -1…1 with y up. A tap on a ball with a struggling figure
+     * in it keeps the figure in. Returns true if the tap did something.
+     */
+    fun napauta(x: Float, y: Float, kamera: Kamera): Boolean {
+        val suunta = kamera.sade(x, y)
+        for (pallo in pallot) {
+            if (pallo.tila != PallonTila.PYRISTELEE) continue
+            // Generous: the ball is small and shaking, and the player is in a hurry
+            val kohti = pallo.p - kamera.paikka
+            val ohi = (kohti - suunta * (kohti dot suunta)).pituus
+            if (ohi > 0.1f + 0.05f * kohti.pituus) continue
+            pallo.vaihda(PallonTila.PALAA)
+            tapahtumat += Tapahtuma(Aani.OSUMA, pallo.p)
+            return true
+        }
+        return false
+    }
+
+    /** Nobody tapped in time: the figure pops out of the ball and runs off. */
+    private fun karkaa(pallo: Pallo, kamera: Kamera) {
+        pallo.vaihda(PallonTila.HAIPUU)
+        putki = 0
+        tapahtumat += Tapahtuma(Aani.KARKASI, pallo.p, teksti = "Se pääsi karkuun!")
+        val vanha = pallo.ukko ?: return
+        val lattia = maailma.lattia ?: return
+        val alas = lattia.lahinPiste(V3(pallo.p.x, lattia.keskus.y, pallo.p.z), 0.06f)
+        val u = Ukko(seuraavaId++, vanha.ulkonako, alas, suuntakulma((alas - kamera.paikka).vaakaan()), rnd.nextInt(), alkuKorkeus = (pallo.p.y - alas.y).coerceAtLeast(0.02f))
+        u.lattia = lattia
+        u.maanTaso = lattia.keskus.y
+        u.katsoja = kamera.paikka
+        ukot += u
+        u.pakene(alas + (alas - kamera.paikka).vaakaan().suunta(V3.Z) * 1.5f)
+    }
 
     private fun palaa(pallo: Pallo, dt: Float, kamera: Kamera) {
         // A happy wobble, then home to the player's hand
@@ -625,12 +700,22 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
                     }).also { omaKatto = it }
                 luo(V3(p.x, katto.keskus.y, p.z), katto)
             }
+            Tyyppi.TAVALLINEN -> {
+                // Now and then an ordinary one turns up on a table top instead of the floor
+                val poyta = if (rnd.nextFloat() < 0.22f) maailma.pinnat.filter {
+                    it.laji == PinnanLaji.POYTA && it.ala > 0.12f && (it.keskus - kamera.paikka).pituus < 4f && ukot.none { u -> u.lattia === it }
+                }.randomOrNull(rnd) else null
+                val pp = poyta?.satunnainenPiste(rnd, 0.1f)
+                if (poyta != null && pp != null) luo(pp, poyta) else luo(p)
+            }
             else -> luo(p)
         }
     }
 
     companion object {
         const val SUURIN_KERROIN = 5
+        /** How long the player has to tap a ball with a struggling figure in it, seconds. */
+        const val PYRISTELYAIKA = 2.2f
         /** How long a special figure stays if nobody catches it, seconds. */
         const val VIERAILU = 40f
         const val TUTKAN_SADE = 4f

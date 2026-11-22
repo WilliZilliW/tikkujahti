@@ -64,8 +64,13 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
   liukuu 0,3 s), joten kaikki mitä ukko osaa lattialla toimii seinällä ja katossa. Osuman saanut irtoaa ja
   putoaa lattialle (`maanTaso`). Kiipeilijän ja ninjan reitin (lattia → seinän juuri → seinälle → alas) ohjaa
   `Peli.ohjaaKiipeilijaa`, laumaa `Peli.ohjaaLaumoja`. Jos AR ei tunne kattoa, kattoukko roikkuu kuvitellusta
-  katosta (`OLETUSKATTO` 2,1 m lattiasta). Kiipeilijä kävelee seinällä pystyssä kuin lattialla: oikeaa
-  kiipeilyasentoa (kädet ja jalat seinässä) tai reunalla roikkumista ei vielä ole.
+  katosta (`OLETUSKATTO` 2,1 m lattiasta). Kiipeilijä konttaa seinällä kädet ja jalat pinnassa
+  (`Ukko.konttaa`, raajat eivät liu'u), ninja juoksee seinällä pystyssä. Reunalla roikkumista ei vielä ole.
+- **Pöydät ja istuminen:** tavallinen ukko ilmestyy välillä pöytätasolle (`PinnanLaji.POYTA`) ja käy istumassa
+  sen reunalla jalat roikkuen (`Toiminto.ISTUU`, `Ukko.istuReunalle`, `Pinta.lahinReuna`, `Peli.istuta`).
+- **Pyristely:** harvinaisempi ukko voi pyristellä pallossa (`PallonTila.PYRISTELEE`, 2,2 s): pelaajan pitää
+  napauttaa palloa (`Peli.napauta`), muuten ukko karkaa. Päällä vain kun `peli.pyristely = true` (alustat
+  kytkevät; testeissä ja labrassa pois).
 - Erikoisukot lähtevät itse pois `VIERAILU` (40 s) jälkeen, erikoisia on paikalla yksi kerrallaan.
 - **Pallot** (`peli/Pallo.kt`: `PalloLaji`, `Reppu`): NORMI (loputon), VERKKO (ei voi väistää/torjua, iso
   osuma-alue), TUTKA (paljastaa piiloukot 4 m säteeltä), HIDASTUS (hidastaa 1,3 m säteeltä), MONI (hajoaa
@@ -83,7 +88,7 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
 `webApp/` (Kotlin/JS, ES-moduulit koska three.js on ESM-only): `Three.kt` (sidonnat vain käytetylle osalle),
 `Piirto.kt` (`UkkoPiirto`, `PalloPiirto`, `PeliPiirto`, `Tallennus`, `Nakyma`), `PeliSivu.kt` (huone + WebXR-AR hit-testillä ja
 dom-overlaylla, albumi, pallorivi, ilmoitukset), `Labra.kt` (ajaa oikeaa `Peli`ä yhdellä ukolla: tyypin ja
-pallon valinta, "Heitä pallo", "Väistää"; kuvatilassa `pinta=seina|katto`), `Aanet.kt` (Web Audio). Sivut `index.html`, `labra.html`, tyylit `tyyli.css`.
+pallon valinta, "Heitä pallo", "Väistää"; kuvatilassa `pinta=seina|katto|poyta`), `Aanet.kt` (Web Audio). Sivut `index.html`, `labra.html`, tyylit `tyyli.css`.
 
 `androidApp/`: `MainActivity.kt` (`PeliTila`, `PeliNakyma`: `ARSceneView` + Compose-HUD), `ArMaailma.kt`
 (ARCore-tasot → `Pinta`, kamera → `Kamera`; lattia = suurin ylöspäin osoittava taso alimman lähellä),
@@ -109,8 +114,7 @@ ja tarkista, että ajot menivät läpi.
 ## Seuraavaksi
 1. Laitepalaute yllä olevista ja korjaukset. Äänien kuuntelu ja viritys.
 2. Issue #1:n "Ensimmäinen versio" -listan ruksit, kun omistaja on todennut kohdat laitteella.
-3. Issue #1:n seuraavat asiat: oikea kiipeilyasento ja reunalla roikkuminen/istuminen, ukot piiloon esineiden
-   taakse kurkkimaan, ketjut ja tornit, pyristely pallossa (napautus), piilopaikat jotka vaihtuvat päivittäin,
-   hatut ja asut, ukkokylä. Albumin vihjeet ja tyyppien yleisyys (`Peli.YLEISYYS`) kaipaavat pelitestausta.
+3. Issue #1:n seuraavat asiat: reunalla roikkuminen, ukot piiloon esineiden taakse kurkkimaan, ketjut ja
+   tornit, hyppiminen pinnalta toiselle, piilopaikat jotka vaihtuvat päivittäin, hatut ja asut, ukkokylä. Albumin vihjeet ja tyyppien yleisyys (`Peli.YLEISYYS`) kaipaavat pelitestausta.
 4. Depth API (piiloutuminen, osumat oikeisiin pintoihin), valon arvio selaimen AR:ään.
 5. Ehdota pilviympäristön asennusskriptiksi yllä oleva SDK-asennus.

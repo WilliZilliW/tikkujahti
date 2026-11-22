@@ -89,6 +89,7 @@ class PeliSivu(private val juuri: HTMLElement) {
         kasiPallo.mesh.castShadow = false
         nakyma.kamera.add(kasiPallo.mesh)
         peli.maailma.asetaPinnat(Huone.pinnat())
+        peli.pyristely = true
 
         val p = URLSearchParams(window.location.search)
         if (p.get("kuva") != null) {
@@ -222,6 +223,8 @@ class PeliSivu(private val juuri: HTMLElement) {
         var katseSormi = -1
         var edX = 0.0
         var edY = 0.0
+        var alkuX = 0.0
+        var alkuY = 0.0
         fun nx(e: dynamic) = ((e.clientX as Double) / window.innerWidth * 2 - 1).toFloat()
         fun ny(e: dynamic) = (1 - (e.clientY as Double) / window.innerHeight * 2).toFloat()
         fun aika(e: dynamic) = ((e.timeStamp as Double) / 1000.0).toFloat()
@@ -230,6 +233,7 @@ class PeliSivu(private val juuri: HTMLElement) {
             val e = ev.asDynamic()
             aanet.herata()
             kosketus.asDynamic().setPointerCapture(e.pointerId)
+            alkuX = e.clientX as Double; alkuY = e.clientY as Double
             if (ar != null && !arLattia) return@addEventListener
             // In the room, a touch on the lower part of the screen (where the ball is) throws; elsewhere it looks
             if (ar != null || ny(e) < -0.2f) {
@@ -259,9 +263,15 @@ class PeliSivu(private val juuri: HTMLElement) {
             val e = ev.asDynamic()
             if (e.pointerId == heittoSormi) {
                 heittoSormi = -1
-                if (ev.type == "pointerup") pyyhkaisy.lopeta()?.let { heita(it) } else pyyhkaisy.peru()
+                if (ev.type == "pointerup") {
+                    val h = pyyhkaisy.lopeta()
+                    if (h != null) heita(h) else peli.napauta(nx(e), ny(e), kamera)
+                } else pyyhkaisy.peru()
             } else if (e.pointerId == katseSormi) {
                 katseSormi = -1
+                // A touch that did not move is a tap, not a look around
+                val liike = kotlin.math.hypot((e.clientX as Double) - alkuX, (e.clientY as Double) - alkuY)
+                if (ev.type == "pointerup" && liike < 12.0) peli.napauta(nx(e), ny(e), kamera)
             } else if (ar != null && !arLattia && ev.type == "pointerup") {
                 asetaArLattia()
             }
@@ -379,6 +389,7 @@ class PeliSivu(private val juuri: HTMLElement) {
     private fun uusiPeli() {
         tallennettu = 0
         peli = Peli((js("Date.now()") as Double % 100000.0).toInt(), Tallennus.lueAlbumi(), Tallennus.lueReppu())
+        peli.pyristely = true
         heittoja = 0
     }
 

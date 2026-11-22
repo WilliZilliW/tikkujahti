@@ -75,6 +75,38 @@ class Pinta(
         return paras
     }
 
+    /**
+     * The point on the polygon's edge nearest to [p], and the direction straight out over the edge there
+     * (in the surface's plane, away from the surface).
+     */
+    fun lahinReuna(p: V3): Pair<V3, V3> {
+        val (a, b) = tasoKoordinaatit(p)
+        var paras = Float.MAX_VALUE
+        var pa = 0f; var pb = 0f; var na = 1f; var nb = 0f
+        for (i in reuna.indices) {
+            val (x1, y1) = reuna[i]
+            val (x2, y2) = reuna[(i + 1) % reuna.size]
+            val dx = x2 - x1
+            val dy = y2 - y1
+            val l2 = dx * dx + dy * dy
+            if (l2 < 1e-10f) continue
+            val t = (((a - x1) * dx + (b - y1) * dy) / l2).coerceIn(0f, 1f)
+            val ex = x1 + dx * t
+            val ey = y1 + dy * t
+            val d = (ex - a) * (ex - a) + (ey - b) * (ey - b)
+            if (d < paras) {
+                paras = d; pa = ex; pb = ey
+                // Perpendicular to the edge, on the side that is outside the polygon
+                val l = kotlin.math.sqrt(l2)
+                na = dy / l; nb = -dx / l
+                if (pisteMonikulmiossa(ex + na * 0.01f, ey + nb * 0.01f)) {
+                    na = -na; nb = -nb
+                }
+            }
+        }
+        return pisteTasolta(pa, pb) to (u * na + v * nb)
+    }
+
     private fun pisteMonikulmiossa(a: Float, b: Float): Boolean {
         var sisalla = false
         var j = reuna.size - 1

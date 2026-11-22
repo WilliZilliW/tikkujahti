@@ -28,6 +28,8 @@ enum class Tunne { NEUTRAALI, ILOINEN, PELOKAS, VIHAINEN, KIUSOITTELEVA, YLLATTY
 enum class Toiminto {
     SAAPUU, SEISOO, KAVELEE, JUOKSEE, KATSELEE, VILKUTTAA, RAAPII_PAATA, HAUKOTTELEE, TUULETTAA,
     SAIKAHTAA, SUUTTUU, KIUSOITTELEE, VAISTAA_HYPPY, VAISTAA_KYYKKY, OSUMA, KAPERTYY,
+    /** Sitting on an edge, legs dangling over it. */
+    ISTUU,
 }
 
 /** Little voice sounds and noises a figure makes; the game turns them into audio. */
@@ -105,6 +107,7 @@ class Ukko(
     /** Figures of the same herd share a number; 0 = on its own. */
     var ryhma = 0
     private var poistuu = -1f
+    private var pakoKohde: V3? = null
     private var varuste = 1f
     /** When false the figure only does what it is told (the lab); when true it decides for itself. */
     var omatoiminen = true
@@ -372,7 +375,8 @@ class Ukko(
         poistuu = 0f
         omatoiminen = false
         aanet += Aantely.IIK
-        meneKohti(pois, true)
+        pakoKohde = pois
+        if (!ilmassa) meneKohti(pois, true)
     }
 
     /** A ball bounced off: the wrong kind of ball, or a shield in the way. The figure gloats. */
@@ -538,11 +542,15 @@ class Ukko(
         toimi(dt)
         liiku(dt)
         rakennaAsento(dt)
+        konttaa(dt)
+        istu(dt)
         paivitaKasvot(dt)
         // The parachute folds away after landing
         if (tyyppi == Tyyppi.LASKUVARJO && !ilmassa) varuste = max(0f, varuste - dt / 0.5f)
         // A fleeing figure runs for a moment, then shrinks away
         if (poistuu >= 0f) {
+            // One that started its escape in mid-air sets off when it lands
+            if (!ilmassa && perilla && poistuu < 1.2f) pakoKohde?.let { meneKohti(it, true) }
             poistuu += dt
             if (poistuu > 1.6f) oma.paksuus = max(0.02f, 1f - (poistuu - 1.6f) / 0.3f)
             if (poistuu > 1.9f) {
@@ -573,6 +581,7 @@ class Ukko(
             Toiminto.VAISTAA_KYYKKY -> 0.9f
             Toiminto.OSUMA -> 0.45f
             Toiminto.KAPERTYY -> 0.7f
+            Toiminto.ISTUU -> 7f + rnd.nextFloat() * 6f
         }
         when (t) {
             Toiminto.VILKUTTAA -> aanet += Aantely.HEI
@@ -720,7 +729,8 @@ class Ukko(
                 if (katseKohde != null) o.katse = juuriL + f * 1f + ylos * 0.05f
                 val k = kohde
                 if (k == null || (k - juuriL).vaakaan().pituus < 0.03f) {
-                    valmiina(); return
+                    if (istumaan != null) aloita(Toiminto.ISTUU) else valmiina()
+                    return
                 }
             }
             Toiminto.KATSELEE -> {
@@ -867,8 +877,14 @@ class Ukko(
                 o.noja = f * (0.35f * alas)
                 o.katse = juuriL + f * 0.3f
             }
+            Toiminto.ISTUU -> {
+                o.tunne = if (sin(aika * 0.7f) > 0.3f) Tunne.ILOINEN else Tunne.NEUTRAALI
+                istumaan?.let { o.kaanny = juuriL + it }
+                if (katseKohde != null) o.katse = juuriL + (istumaan ?: f) * 1f + ylos * 0.1f
+            }
             Toiminto.OSUMA, Toiminto.KAPERTYY -> {}
         }
+        if (toiminto != Toiminto.ISTUU && toiminto != Toiminto.KAVELEE) istumaan = null
 
         // The shield stays up in front unless the hands are busy
         if (tyyppi == Tyyppi.KILPI && o.kasiV == null && toiminto != Toiminto.SAAPUU) {
@@ -958,7 +974,8 @@ class Ukko(
         juuriL += nopeus * dt
         // Stay on the floor
         pintaL?.let { l ->
-            if (!l.sisalla(juuriL, -0.03f)) {
+            // (one going to sit on the edge is allowed right up to it)
+            if (istumaan == null && !l.sisalla(juuriL, -0.03f)) {
                 val p = l.lahinPiste(juuriL, 0.04f)
                 val siirto = p - juuriL
                 juuriL = p
@@ -1177,6 +1194,131 @@ class Ukko(
     }
 
     // =====================================================================================================
+    // Climbing: on a wall the climber goes on all fours, hands and feet on the surface
+    // =====================================================================================================
+
+    private var konttaus = 0f
+    private var konttiMatka = 0f
+
+    private fun konttaa(dt: Float) {
+        val a = alusta
+        val liikkeessa = toiminto == Toiminto.KAVELEE || toiminto == Toiminto.JUOKSEE || toiminto == Toiminto.SEISOO || toiminto == Toiminto.KATSELEE
+        val haluttu = if (tyyppi == Tyyppi.KIIPEILIJA && a != null && abs(a.y.y) < 0.5f && liikkeessa && !ilmassa) 1f else 0f
+        konttaus += clamp(haluttu - konttaus, -dt / 0.3f, dt / 0.3f)
+        konttiMatka += nopeus.pituus * dt
+        if (konttaus <= 0f) return
+        val k = m.koko
+        val ylos = V3.Y
+        val f = V3.suunnasta(suunta)
+        val r = f cross ylos
+        val maa = V3(juuriL.x, pintaL?.keskus?.y ?: juuriL.y, juuriL.z)
+        val hengitys = sin(aika * 2f * PI.toFloat() * 0.3f) * 0.001f * k
+        val lantio = maa + ylos * (0.04f * k + hengitys)
+        val rinta = lantio + f * (m.vartalo * 0.96f) + ylos * (0.014f * k)
+        val p = Array(Nivel.entries.size) { V3.NOLLA }
+        p[Nivel.LANTIO.ordinal] = lantio
+        p[Nivel.RINTA.ordinal] = rinta
+        p[Nivel.NISKA.ordinal] = rinta + f * (0.002f * k)
+        // The head is held up off the wall, looking where the head already looks
+        p[Nivel.PAA.ordinal] = rinta + (f * 0.55f + ylos * 0.6f + oma.paa.eteen * 0.25f).suunta() * (m.kaula + m.paaSade * 0.88f)
+        // A diagonal gait driven by the distance covered: a hand or foot on the surface stays where it is
+        val kierros = 0.075f * k
+        val tuki = 0.65f
+        val ulottuma = tuki * kierros / 2f
+        for (i in 0..3) {
+            val kasi = i < 2
+            val s = if (i % 2 == 0) -1f else 1f // left, right
+            val vaihe = ((konttiMatka / kierros) + (if (i == 0 || i == 3) 0f else 0.5f)) % 1f
+            val siirto: Float
+            var nosto = 0f
+            if (vaihe < tuki) {
+                siirto = ulottuma - vaihe / tuki * 2f * ulottuma
+            } else {
+                val t = (vaihe - tuki) / (1f - tuki)
+                siirto = -ulottuma + pehmea(t) * 2f * ulottuma
+                nosto = kumpu(t) * 0.014f * k
+            }
+            val tyvi = if (kasi) rinta - f * (0.004f * k) + r * (s * m.olkaLeveys) else lantio + r * (s * m.lonkkaLeveys)
+            val pohja = V3(tyvi.x, maa.y, tyvi.z) + f * ((if (kasi) 0.03f else -0.014f) * k + siirto) + r * (s * (if (kasi) 0.024f else 0.03f) * k)
+            if (kasi) {
+                val kohde = pohja + ylos * (m.kasiSade * 0.8f + nosto)
+                val kyynar = kaksiLuuta(tyvi, kohde, m.olkavarsi, m.kyynarvarsi, tyvi + r * (s * 0.05f) + ylos * 0.05f - f * 0.012f)
+                p[(if (s < 0f) Nivel.OLKA_V else Nivel.OLKA_O).ordinal] = tyvi
+                p[(if (s < 0f) Nivel.KYYNARPAA_V else Nivel.KYYNARPAA_O).ordinal] = kyynar
+                p[(if (s < 0f) Nivel.KASI_V else Nivel.KASI_O).ordinal] = kyynar + (kohde - kyynar).suunta(-ylos) * m.kyynarvarsi
+            } else {
+                val kohde = pohja + ylos * (m.nilkka + nosto)
+                val polvi = kaksiLuuta(tyvi, kohde, m.reisi, m.saari, tyvi + r * (s * 0.05f) + ylos * 0.05f + f * 0.02f)
+                val nilkka = polvi + (kohde - polvi).suunta(-ylos) * m.saari
+                p[(if (s < 0f) Nivel.LONKKA_V else Nivel.LONKKA_O).ordinal] = tyvi
+                p[(if (s < 0f) Nivel.POLVI_V else Nivel.POLVI_O).ordinal] = polvi
+                p[(if (s < 0f) Nivel.NILKKA_V else Nivel.NILKKA_O).ordinal] = nilkka
+                p[(if (s < 0f) Nivel.VARVAS_V else Nivel.VARVAS_O).ordinal] = nilkka + (f * 0.5f + r * (s * 0.85f)).suunta() * m.jalkatera - ylos * (m.nilkka * 0.55f)
+            }
+        }
+        val t = pehmea(konttaus)
+        for (i in p.indices) oma.nivelet[i] = lerp(oma.nivelet[i], p[i], t)
+    }
+
+    // =====================================================================================================
+    // Sitting on an edge
+    // =====================================================================================================
+
+    private var istumaan: V3? = null
+    private var istuin: V3? = null
+    private var istunta = 0f
+
+    /** Walks to the edge of its surface at [reuna] and sits there, legs over the edge towards [ulos]. */
+    fun istuReunalle(reuna: V3, ulos: V3) {
+        if (kiinni || valmis || ilmassa) return
+        val u = (alusta?.suuntaSisaan(ulos) ?: ulos).vaakaan().suunta(V3.Z)
+        meneKohti(reuna - ulos * (0.012f * m.koko), false)
+        istumaan = u
+        istuin = kohde
+    }
+
+    private fun istu(dt: Float) {
+        val ulos = istumaan
+        // Sit down only once turned to face out over the edge
+        val kaannytty = ulos != null && abs(kulmaero(suunta, suuntakulma(ulos))) < 0.5f
+        val haluttu = if (toiminto == Toiminto.ISTUU && kaannytty) 1f else 0f
+        istunta += clamp(haluttu - istunta, -dt / 0.35f, dt / 0.35f)
+        if (istunta <= 0f) return
+        // Shuffle to the exact spot, so that the knees clear the edge
+        if (haluttu > 0f) istuin?.let { juuriL = lerp(juuriL, it, min(1f, dt * 6f)) }
+        val ylos = V3.Y
+        val f = V3.suunnasta(suunta)
+        val r = f cross ylos
+        val maa = V3(juuriL.x, pintaL?.keskus?.y ?: juuriL.y, juuriL.z)
+        val p = oma.nivelet.copyOf()
+        val lantio = maa + ylos * (m.vartaloSade * 1.05f) - f * (0.004f * m.koko)
+        // The upper body keeps its shape, lowered onto the seat and leaning back a touch
+        val siirto = lantio - oma[Nivel.LANTIO]
+        for (n in YLAVARTALO) p[n.ordinal] = oma[n] + siirto - f * (0.1f * (oma[n].y - oma[Nivel.LANTIO].y))
+        p[Nivel.LANTIO.ordinal] = lantio
+        for (puoli in 0..1) {
+            val s = if (puoli == 0) -1f else 1f
+            // Hands rest on the surface beside the hips
+            val olka = p[(if (puoli == 0) Nivel.OLKA_V else Nivel.OLKA_O).ordinal]
+            val kohde = maa + r * (s * 0.034f * m.koko) - f * (0.012f * m.koko) + ylos * (m.kasiSade * 0.8f)
+            val kyynar = kaksiLuuta(olka, kohde, m.olkavarsi, m.kyynarvarsi, olka - f * 0.05f + r * (s * 0.02f))
+            p[(if (puoli == 0) Nivel.KYYNARPAA_V else Nivel.KYYNARPAA_O).ordinal] = kyynar
+            p[(if (puoli == 0) Nivel.KASI_V else Nivel.KASI_O).ordinal] = kyynar + (kohde - kyynar).suunta(-ylos) * m.kyynarvarsi
+            // Thighs out over the edge, shins swinging below it
+            val lonkka = lantio + r * (s * m.lonkkaLeveys)
+            val polvi = lonkka + (f + r * (s * 0.12f)).suunta() * m.reisi
+            val heilu = 0.22f + 0.3f * sin(aika * 2.3f + puoli * 2.4f) // never back into the table
+            val nilkka = polvi + (-ylos * cos(heilu) + f * sin(heilu)) * m.saari
+            p[(if (puoli == 0) Nivel.LONKKA_V else Nivel.LONKKA_O).ordinal] = lonkka
+            p[(if (puoli == 0) Nivel.POLVI_V else Nivel.POLVI_O).ordinal] = polvi
+            p[(if (puoli == 0) Nivel.NILKKA_V else Nivel.NILKKA_O).ordinal] = nilkka
+            p[(if (puoli == 0) Nivel.VARVAS_V else Nivel.VARVAS_O).ordinal] = nilkka + (f * cos(heilu * 0.5f) - ylos * 0.45f).suunta() * m.jalkatera
+        }
+        val t = pehmea(istunta)
+        for (i in p.indices) oma.nivelet[i] = lerp(oma.nivelet[i], p[i], t)
+    }
+
+    // =====================================================================================================
     // Caught: knocked like a rag doll, then curled into the ball
     // =====================================================================================================
 
@@ -1294,6 +1436,7 @@ class Ukko(
         /** Gravity for the figures' own jumps: a bit floaty, so small hops read as cartoon hops. */
         const val PAINOVOIMA = 6.5f
         private val VAISTOT = setOf(Toiminto.VAISTAA_HYPPY, Toiminto.VAISTAA_KYYKKY)
+        private val YLAVARTALO = listOf(Nivel.RINTA, Nivel.NISKA, Nivel.PAA, Nivel.OLKA_V, Nivel.OLKA_O, Nivel.KYYNARPAA_V, Nivel.KYYNARPAA_O, Nivel.KASI_V, Nivel.KASI_O)
 
         /** Two-bone IK: where the middle joint goes when [a] reaches for [c], bending towards [napa]. */
         fun kaksiLuuta(a: V3, c: V3, l1: Float, l2: Float, napa: V3): V3 {

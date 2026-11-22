@@ -54,6 +54,8 @@ class Aanet {
             Aani.HIDASTUS -> soita("hidastus", v) { Syntikka.hidastus() }
             Aani.LIIMA -> soita("liima", v) { Syntikka.liima() }
             Aani.POIMINTA -> soita("poiminta", 0.9) { Syntikka.poiminta() }
+            Aani.PYRISTELY -> soita("pyristely", 0.9) { Syntikka.pyristely() }
+            Aani.KARKASI -> soita("karkasi", 0.8) { Syntikka.karkasi() }
             // The glitter of a hidden ball grows louder as the player gets closer
             Aani.KIMALLUS -> soita("kimallus", (0.9 / (0.3 + etaisyys * etaisyys)).coerceAtMost(0.8) * t.voima) { Syntikka.kimallus() }
             Aani.AANTELY -> t.aantely?.let { aantely(it, t.korkeus, v) }

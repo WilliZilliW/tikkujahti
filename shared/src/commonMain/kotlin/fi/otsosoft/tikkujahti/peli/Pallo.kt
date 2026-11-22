@@ -11,6 +11,8 @@ enum class PallonTila {
     LENTAA,
     /** Hit a figure: hangs in the air while the figure curls into it. */
     VANGITSEE,
+    /** The caught figure struggles inside: tap the ball quickly or it gets out. */
+    PYRISTELEE,
     /** Carries the caught figure back to the player. */
     PALAA,
     /** A miss that has come to rest and is fading away. */

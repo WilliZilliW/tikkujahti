@@ -139,13 +139,28 @@ class Labra(private val juuri: HTMLElement) {
         etaisyys = p.get("etaisyys")?.toDoubleOrNull() ?: 0.6
         katsoKorkeus = p.get("korkeus")?.toDoubleOrNull() ?: katsoKorkeus
         asetaKamera()
-        if (pinta == "seina") ukko.lattia = Pinta.suorakaide("seina", PinnanLaji.SEINA, V3(0f, 0.15f, -0.05f), V3.Z, V3.X, 0.6f, 0.3f)
+        if (pinta == "seina") {
+            ukko.lattia = Pinta.suorakaide("seina", PinnanLaji.SEINA, V3(0f, 0.3f, -0.05f), V3.Z, V3.X, 0.9f, 0.6f)
+            val seina = Mesh(BoxGeometry(0.9, 0.6, 0.02), MeshStandardMaterial(olio { color = 0xdfe6e0; roughness = 0.9 }))
+            seina.position.set(0.0, 0.3, -0.06)
+            seina.receiveShadow = true
+            nakyma.scene.add(seina)
+        }
+        if (pinta == "poyta") {
+            ukko.lattia = Pinta.suorakaide("poyta", PinnanLaji.POYTA, V3(0f, 0.16f, 0f), V3.Y, V3.X, 0.34f, 0.22f)
+            val poyta = Mesh(BoxGeometry(0.34, 0.16, 0.22), MeshStandardMaterial(olio { color = 0xc98f5a; roughness = 0.7 }))
+            poyta.position.set(0.0, 0.08, 0.0)
+            poyta.receiveShadow = true
+            poyta.castShadow = true
+            nakyma.scene.add(poyta)
+        }
         if (pinta == "katto") ukko.lattia = Pinta.suorakaide("katto", PinnanLaji.KATTO, V3(0f, 0.3f, 0f), -V3.Y, V3.X, 0.6f, 0.6f)
         val dt = 1f / 120f
         val toiminto = p.get("toiminto")?.let { nimi -> Toiminto.entries.firstOrNull { it.name == nimi } }
         if (toiminto != Toiminto.SAAPUU) {
             repeat(360) { ukko.paivita(dt) }
             if (toiminto != null) ukko.komenna(toiminto)
+            if (pinta == "poyta") ukko.lattia?.lahinReuna(ukko.juuri + V3(0.02f, 0f, 0.1f))?.let { (reuna, ulos) -> ukko.istuReunalle(reuna, ulos) }
         }
         val t = p.get("t")?.toFloatOrNull() ?: 1f
         repeat((t / dt).toInt()) { ukko.paivita(dt) }

@@ -230,6 +230,29 @@ object Syntikka {
         }, voima)
     }
 
+    /** A figure struggling in the ball: an urgent rattle. */
+    fun pyristely(): FloatArray {
+        val n = (0.5f * TAAJUUS).toInt()
+        var vaihe = 0f
+        return normalisoi(FloatArray(n) { i ->
+            val t = i / TAAJUUS.toFloat()
+            val isku = (t * 14f) % 1f
+            vaihe += (500f + 250f * sin(t * 40f)) / TAAJUUS
+            sin(2f * PI.toFloat() * vaihe) * exp(-isku * 6f) * min(1f, isku / 0.03f) * min(1f, (n - i) / 300f)
+        }, 0.55f)
+    }
+
+    /** A figure got away: a falling slide whistle. */
+    fun karkasi(): FloatArray {
+        val n = (0.45f * TAAJUUS).toInt()
+        var vaihe = 0f
+        return normalisoi(FloatArray(n) { i ->
+            val x = i / n.toFloat()
+            vaihe += (1100f - 800f * x * x) / TAAJUUS
+            sin(2f * PI.toFloat() * vaihe) * sin(PI.toFloat() * x.pow(0.5f))
+        }, 0.5f)
+    }
+
     /** The radar: a ping that sweeps up and echoes. */
     fun tutka(): FloatArray {
         val n = (0.7f * TAAJUUS).toInt()

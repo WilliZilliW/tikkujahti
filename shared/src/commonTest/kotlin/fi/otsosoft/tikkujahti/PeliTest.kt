@@ -388,7 +388,6 @@ class PeliTest {
         val k = Kamera(V3(0f, 0.7f, 1.7f), Kehys.luo(V3(0f, -0.28f, -1f)), 0.53f, 0.5f)
         val rnd = kotlin.random.Random(2)
         val nahdyt = HashSet<Tyyppi>()
-        var seinalla = false
         repeat(60 * 600) { ruutu ->
             if (ruutu % 100 == 50) {
                 PalloLaji.entries.filter { peli.reppu[it] > 0 }.random(rnd).let { peli.reppu.valitse(it) }
@@ -397,7 +396,6 @@ class PeliTest {
             peli.paivita(dt, k)
             for (u in peli.ukot) {
                 nahdyt += u.ulkonako.tyyppi
-                if (u.seinalla && u.ulkonako.tyyppi != Tyyppi.KATTO) seinalla = true
                 val p = u.keskipiste
                 assertTrue(p.x.isFinite() && p.y.isFinite() && p.z.isFinite(), "ruutu $ruutu: ${u.ulkonako.tyyppi} ei ole luku")
                 assertTrue(kotlin.math.abs(p.x) < 2.6f && kotlin.math.abs(p.z) < 2.6f && p.y > -0.2f && p.y < 2.7f, "ruutu $ruutu: ${u.ulkonako.tyyppi} karkasi huoneesta: $p")
@@ -406,8 +404,135 @@ class PeliTest {
         }
         // The rarest may well not turn up in ten minutes, but most kinds must
         assertTrue(nahdyt.size >= 8, "kymmenessä minuutissa nähtiin vain $nahdyt")
-        assertTrue(seinalla, "kukaan ei kiivennyt seinälle")
         assertTrue(peli.keratyt >= 5, "kerättyjä vain ${peli.keratyt}")
+    }
+
+    @Test
+    fun kiipeilijaKonttaaSeinallaKadetJaJalatPinnassa() {
+        val seina = Pinta.suorakaide("seina", PinnanLaji.SEINA, V3(0f, 1.25f, -2f), V3.Z, V3.X, 4f, 2.5f)
+        val u = Ukko(1, Peli.luoUlkonako(Tyyppi.KIIPEILIJA, Ulkonako.VARIT[0], kotlin.random.Random(1)), seina.keskus, 0f, 4, pinta = seina)
+        u.omatoiminen = false
+        u.katsoja = V3(0f, 1.3f, 1.5f)
+        repeat(150) { u.paivita(dt) }
+        u.meneKohti(seina.keskus + V3(0.2f, 0.6f, 0f), false)
+        var ed = listOf(Nivel.KASI_V, Nivel.KASI_O, Nivel.NILKKA_V, Nivel.NILKKA_O).map { u.asento[it] }
+        var liukuma = 0f
+        var kuljettu = 0f
+        val alku = u.juuri
+        repeat(90) { ruutu ->
+            u.paivita(dt)
+            // The body lies along the wall, not out from it
+            assertTrue(seina.etaisyys(u.asento[Nivel.RINTA]) < 0.09f * u.m.koko, "ruutu $ruutu: rinta irti seinästä ${seina.etaisyys(u.asento[Nivel.RINTA])}")
+            val nyt = listOf(Nivel.KASI_V, Nivel.KASI_O, Nivel.NILKKA_V, Nivel.NILKKA_O).map { u.asento[it] }
+            for (i in nyt.indices) {
+                val d = seina.etaisyys(nyt[i])
+                assertTrue(d > -0.002f && d < 0.035f, "ruutu $ruutu: raaja $i etäisyydellä $d seinästä")
+                // A hand or foot resting on the wall must not slide along it
+                val lepo = (if (i < 2) u.m.kasiSade * 0.8f else u.m.nilkka) + 0.0005f
+                if (d < lepo && seina.etaisyys(ed[i]) < lepo && ruutu > 5) liukuma = maxOf(liukuma, (nyt[i] - ed[i]).pituus)
+            }
+            ed = nyt
+            kuljettu = (u.juuri - alku).pituus
+        }
+        assertTrue(kuljettu > 0.15f, "kiipeilijä ei edennyt ($kuljettu m)")
+        assertTrue(liukuma < 0.003f, "seinässä oleva raaja liukui ${liukuma * 1000} mm ruudussa")
+    }
+
+    @Test
+    fun pyristelevaUkkoKarkaaEllEiNapauta() {
+        for (napautetaan in listOf(true, false)) {
+            // A very rare figure struggles more often than not: find a game where it does
+            var nahtiin = false
+            for (siemen in 1..12) {
+                val peli = Peli(siemen)
+                peli.maailma.asetaPinnat(listOf(lattia))
+                peli.ukkojaKerralla = 0
+                peli.aarteita = false
+                peli.pyristely = true
+                peli.reppu.rajaton = true
+                peli.reppu.valitse(PalloLaji.KULTAINEN)
+                val pohja = Peli.luoUlkonako(Tyyppi.KULTAINEN, Ulkonako.VARIT[0], kotlin.random.Random(1))
+                val u = Ukko(1, pohja.copy(luonne = pohja.luonne.copy(vaistotaito = 0f)), V3(0f, 0f, -0.3f), 0f, 3, alkuKorkeus = 0.2f)
+                u.lattia = lattia
+                u.omatoiminen = false
+                repeat(150) { u.paivita(dt); u.aanet.clear() }
+                peli.ukot += u
+                peli.paivita(dt, kamera)
+                heitaKohti(peli, u)
+                var pyristeli = false
+                var karkasi = false
+                repeat(60 * 9) {
+                    peli.paivita(dt, kamera)
+                    val pallo = peli.pallot.firstOrNull { it.tila == PallonTila.PYRISTELEE }
+                    if (pallo != null) {
+                        pyristeli = true
+                        if (napautetaan && pallo.tilaAika > 0.5f) {
+                            val kohti = (pallo.p - kamera.paikka).suunta()
+                            val e = kohti dot kamera.kehys.eteen
+                            assertTrue(peli.napauta((kohti dot kamera.kehys.oikealle) / e / (kamera.tanPuoliFov * kamera.kuvasuhde), (kohti dot kamera.kehys.ylos) / e / kamera.tanPuoliFov, kamera))
+                        }
+                    }
+                    if (peli.tapahtumat.any { it.laji == Aani.KARKASI }) karkasi = true
+                }
+                if (!pyristeli) continue
+                nahtiin = true
+                assertEquals(!napautetaan, karkasi)
+                assertEquals(if (napautetaan) 1 else 0, peli.keratyt)
+                assertTrue(peli.ukot.isEmpty() && peli.pallot.isEmpty(), "karannut ukko tai pallo jäi kentälle")
+                assertTrue(!peli.napauta(0f, 0f, kamera))
+                break
+            }
+            assertTrue(nahtiin, "kultainen ukko ei pyristellyt kertaakaan")
+        }
+    }
+
+    @Test
+    fun kiipeilijaNouseeSeinalleJaPalaa() {
+        val peli = Peli(3)
+        peli.maailma.asetaPinnat(Huone.pinnat())
+        peli.tyypit = listOf(Tyyppi.KIIPEILIJA)
+        peli.ukkojaKerralla = 1
+        peli.aarteita = false
+        val k = Kamera(V3(0f, 0.7f, 1.7f), Kehys.luo(V3(0f, -0.28f, -1f)), 0.53f, 0.5f)
+        var nousuja = 0
+        var laskuja = 0
+        var oli = false
+        var korkein = 0f
+        repeat(60 * 90) {
+            peli.paivita(dt, k)
+            val u = peli.ukot.firstOrNull() ?: return@repeat
+            if (u.seinalla && !oli) nousuja++
+            if (!u.seinalla && oli) laskuja++
+            oli = u.seinalla
+            if (u.seinalla) korkein = maxOf(korkein, u.juuri.y)
+        }
+        assertTrue(nousuja >= 2 && laskuja >= 1, "puolessatoista minuutissa nousuja $nousuja, laskuja $laskuja")
+        assertTrue(korkein > 0.4f, "kiipeilijä nousi vain ${korkein} m")
+    }
+
+    @Test
+    fun ukkoIstuuPoydanReunalleJalatRoikkuen() {
+        val poyta = Pinta.suorakaide("poyta", PinnanLaji.POYTA, V3(0f, 0.5f, 0f), V3.Y, V3.X, 0.8f, 0.5f)
+        val u = Ukko(1, Ulkonako(Ulkonako.VARIT[0]), V3(0.1f, 0.5f, 0.05f), 0f, 5, pinta = poyta)
+        u.omatoiminen = false
+        u.katsoja = V3(0f, 1.2f, 1.5f)
+        repeat(150) { u.paivita(dt) }
+        val (reuna, ulos) = poyta.lahinReuna(u.juuri)
+        assertEquals(0.25f, reuna.z, 1e-4f)
+        assertTrue((ulos - V3.Z).pituus < 1e-4f, "reunan suunta $ulos")
+        u.istuReunalle(reuna, ulos)
+        repeat(60 * 5) { u.paivita(dt) }
+        assertEquals(Toiminto.ISTUU, u.toiminto)
+        // Seated: pelvis on the table, knees out over the edge, feet below the table top, head well above
+        assertTrue(u.asento[Nivel.LANTIO].y < 0.5f + 0.02f && poyta.sisalla(u.asento[Nivel.LANTIO]))
+        for (n in listOf(Nivel.POLVI_V, Nivel.POLVI_O)) assertTrue(u.asento[n].z > 0.25f, "$n ei ole reunan yli")
+        for (n in listOf(Nivel.NILKKA_V, Nivel.NILKKA_O)) assertTrue(u.asento[n].y < 0.5f - 0.02f && u.asento[n].z > 0.25f, "$n ei roiku: ${u.asento[n]}")
+        assertTrue(u.asento[Nivel.PAA].y > 0.5f + u.m.pituus * 0.3f)
+        // It gets up again in time, back onto the table
+        repeat(60 * 14) { u.paivita(dt) }
+        assertTrue(u.toiminto != Toiminto.ISTUU)
+        repeat(60) { u.paivita(dt) }
+        for (n in Nivel.entries) assertTrue(u.asento[n].y > 0.5f - 0.004f, "$n jäi pöydän alle noustua")
     }
 
     @Test

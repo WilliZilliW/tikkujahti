@@ -90,6 +90,10 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
     val aanet = Aanet()
     private val pyyhkaisy = Pyyhkaisy()
     private var edellinen = 0L
+
+    init {
+        peli.pyristely = true
+    }
     private var seuranta = false
 
     // The ball in the hand, in screen coordinates -1…1
@@ -146,7 +150,7 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         val y = 1f - e.y / koko.height * 2f
         val t = e.eventTime / 1000f
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> if (lattia != null && kasiTauko <= 0f) pyyhkaisy.aloita(x, y, t)
+            MotionEvent.ACTION_DOWN -> if (lattia != null && kasiTauko <= 0f) pyyhkaisy.aloita(x, y, t) else if (lattia != null) peli.napauta(x, y, kamera)
             MotionEvent.ACTION_MOVE -> if (pyyhkaisy.kaynnissa) {
                 pyyhkaisy.lisaa(x, y, t)
                 kasiX = x; kasiY = y
@@ -155,7 +159,10 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
                 pyyhkaisy.lisaa(x, y, t)
                 kasiX = x; kasiY = y
                 val mista = kadenPaikka()
-                pyyhkaisy.lopeta()?.let { heitto: Heitto ->
+                val heitto = pyyhkaisy.lopeta()
+                // Not a throw, so a tap: it may be for a ball with a struggling figure in it
+                if (heitto == null) peli.napauta(x, y, kamera)
+                heitto?.let { heitto: Heitto ->
                     peli.heita(heitto, kamera, mista)
                     peli.tapahtumat.lastOrNull()?.let { aanet.soita(it, kamera.paikka) }
                     kasiTauko = 0.45f
