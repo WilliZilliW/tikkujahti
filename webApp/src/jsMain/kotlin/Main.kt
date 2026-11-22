@@ -1,5 +1,4 @@
-import fi.otsosoft.tikkujahti.Tikkujahti
-
+// Placeholder until the browser version is written (see CLAUDE.md, "Seuraavaksi").
 fun main() {
-    console.log(Tikkujahti.NIMI)
+    console.log("Tikkujahti")
 }
