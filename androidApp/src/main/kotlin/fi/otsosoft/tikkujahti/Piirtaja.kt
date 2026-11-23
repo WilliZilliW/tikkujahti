@@ -9,7 +9,9 @@ import com.google.android.filament.MaterialInstance
 import com.google.android.filament.RenderableManager
 import com.google.android.filament.Scene
 import com.google.android.filament.VertexBuffer
+import fi.otsosoft.tikkujahti.maailma.Pinta
 import fi.otsosoft.tikkujahti.matikka.V3
+import fi.otsosoft.tikkujahti.mesh.Peittajat
 import fi.otsosoft.tikkujahti.mesh.PalloVerkko
 import fi.otsosoft.tikkujahti.mesh.UkkoVerkko
 import fi.otsosoft.tikkujahti.mesh.Verkko
@@ -25,6 +27,7 @@ import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import fi.otsosoft.tikkujahti.ukko.Ukko
 import fi.otsosoft.tikkujahti.ukko.Ulkonako
 import fi.otsosoft.tikkujahti.ukko.Vari
+import io.github.sceneview.ar.camera.ARCameraStream
 import io.github.sceneview.loaders.MaterialLoader
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -126,6 +129,76 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
     private var kasiPallo = luoPallo(PalloLaji.NORMI)
     private val muunnos = FloatArray(16)
 
+    /** An invisible stand-in for a recognised wall or table top: it hides the figures behind it. */
+    private class Peitto(val pinta: Pinta, val entiteetti: Int, val pisteet: VertexBuffer, val indeksit: IndexBuffer)
+    private val peitot = HashMap<String, Peitto>()
+    private val peittoAine = materiaalit.createOcclusionInstance()
+    private var peittoVuoro = 0
+
+    /** Keeps a stand-in for every wall and table top the game knows (rebuilt a couple of times a second). */
+    private fun paivitaPeitot(pinnat: List<Pinta>) {
+        if (peittoVuoro++ % 15 != 0) return
+        val nyt = pinnat.filter { Peittajat.peittaa(it) }.associateBy { it.id }
+        val it = peitot.entries.iterator()
+        while (it.hasNext()) {
+            val e = it.next()
+            val uusi = nyt[e.key]
+            if (uusi == null || !samaPinta(uusi, e.value.pinta)) {
+                tuhoaPeitto(e.value)
+                it.remove()
+            }
+        }
+        for ((id, p) in nyt) if (id !in peitot) peitot[id] = luoPeitto(p)
+    }
+
+    private fun samaPinta(a: Pinta, b: Pinta) = a === b || (a.keskus == b.keskus && a.normaali == b.normaali && a.reuna == b.reuna)
+
+    private fun luoPeitto(p: Pinta): Peitto {
+        val (paikat, kolmiot) = Peittajat.kolmiot(p)
+        val vb = VertexBuffer.Builder()
+            .vertexCount(paikat.size / 3)
+            .bufferCount(1)
+            .attribute(VertexBuffer.VertexAttribute.POSITION, 0, VertexBuffer.AttributeType.FLOAT3, 0, 12)
+            .build(engine)
+        vb.setBufferAt(engine, 0, floatPuskuri(paikat.size).apply { put(paikat); flip() })
+        // Both windings, so the stand-in hides from either side (from the next room too)
+        val ind = ByteBuffer.allocateDirect(kolmiot.size * 4).order(ByteOrder.nativeOrder()).asShortBuffer()
+        for (i in kolmiot) ind.put(i.toShort())
+        for (t in 0 until kolmiot.size / 3) {
+            ind.put(kolmiot[t * 3].toShort()); ind.put(kolmiot[t * 3 + 2].toShort()); ind.put(kolmiot[t * 3 + 1].toShort())
+        }
+        ind.flip()
+        val ib = IndexBuffer.Builder().indexCount(kolmiot.size * 2).bufferType(IndexBuffer.Builder.IndexType.USHORT).build(engine)
+        ib.setBuffer(engine, ind)
+        val e = EntityManager.get().create()
+        var lo = V3(Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE)
+        var hi = -lo
+        for (i in 0 until paikat.size / 3) {
+            lo = V3(kotlin.math.min(lo.x, paikat[i * 3]), kotlin.math.min(lo.y, paikat[i * 3 + 1]), kotlin.math.min(lo.z, paikat[i * 3 + 2]))
+            hi = V3(kotlin.math.max(hi.x, paikat[i * 3]), kotlin.math.max(hi.y, paikat[i * 3 + 1]), kotlin.math.max(hi.z, paikat[i * 3 + 2]))
+        }
+        val c = (lo + hi) * 0.5f
+        val h = (hi - lo) * 0.5f
+        RenderableManager.Builder(1)
+            .boundingBox(Box(c.x, c.y, c.z, h.x + 0.01f, h.y + 0.01f, h.z + 0.01f))
+            .culling(false)
+            .castShadows(false)
+            .receiveShadows(false)
+            // After the camera feed, before the figures (default priority 4): they are depth-tested against it
+            .priority(ARCameraStream.OCCLUDER_PRIORITY)
+            .geometry(0, RenderableManager.PrimitiveType.TRIANGLES, vb, ib)
+            .material(0, peittoAine)
+            .build(engine, e)
+        scene.addEntity(e)
+        return Peitto(p, e, vb, ib)
+    }
+
+    private fun tuhoaPeitto(k: Peitto) {
+        poista(k.entiteetti)
+        engine.destroyVertexBuffer(k.pisteet)
+        engine.destroyIndexBuffer(k.indeksit)
+    }
+
     private fun palloAine(l: PalloLaji) = palloAineet.getOrPut(l) { aine(l.a, 0.4f) to aine(l.b, 0.4f) }
     private fun hehku(v: Vari) = hehkut.getOrPut(v) { materiaalit.createColorInstance(Color(v.r, v.g, v.b, 0.22f), 0f, 1f, 0f) }
 
@@ -220,6 +293,7 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
 
     /** Brings the scene up to date with the game. [kasi] is where the ball in the player's hand is, or null. */
     fun paivita(peli: Peli, kasi: V3?, kadenKoko: Float) {
+        paivitaPeitot(peli.maailma.pinnat)
         for (u in peli.ukot) {
             val k = ukot.getOrPut(u) { luoUkko(u) }
             nayta(k.entiteetti, u.asento.nakyvissa)
@@ -297,6 +371,9 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
         pallot.clear(); tehosteet.clear(); aarteet.clear()
         poista(kasiPallo)
         palloPuskurit.tuhoa()
+        for (k in peitot.values) tuhoaPeitto(k)
+        peitot.clear()
+        engine.destroyMaterialInstance(peittoAine)
         for (m in listOf(valkoinen, tumma, suu, kieli) + hehkut.values + palloAineet.values.flatMap { listOf(it.first, it.second) }) engine.destroyMaterialInstance(m)
     }
 }

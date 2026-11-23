@@ -83,6 +83,11 @@ class Ukko(
      * find, instead of following the player about.
      */
     var koti: V3? = null
+    /**
+     * Whether the way between two world points is clear of known walls (the game gives this). Figures do not
+     * choose to walk through a wall: a figure behind one would vanish behind its stand-in.
+     */
+    var esteeton: ((V3, V3) -> Boolean)? = null
     /** World height of the real floor, where a knocked figure falls to. */
     var maanTaso: Float? = null
     private var pintaM: Pinta? = null
@@ -668,6 +673,7 @@ class Ukko(
             val pituus = matka * (0.5f + rnd.nextFloat())
             var p = juuriL + V3.suunnasta(kulma) * pituus
             if (l != null) p = l.lahinPiste(p, 0.06f)
+            if (esteeton?.invoke(maailmaan(juuriL), maailmaan(p)) == false) return@repeat
             var pisteet = 0f
             val kotiL = koti?.let { paikalliseen(it) }
             if (kotiL != null) {

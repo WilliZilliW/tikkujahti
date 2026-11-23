@@ -144,3 +144,20 @@ external class CanvasTexture(canvas: HTMLCanvasElement) {
 external val RepeatWrapping: Int
 external val DynamicDrawUsage: Int
 external val DoubleSide: Int
+
+external class ShaderMaterial(params: dynamic = definedExternally) : Material {
+    val uniforms: dynamic
+}
+
+external class DataTexture(data: dynamic, width: Int, height: Int, format: Int = definedExternally, type: Int = definedExternally) {
+    var needsUpdate: Boolean
+    var magFilter: Int
+    var minFilter: Int
+    fun dispose()
+}
+
+external val RedFormat: Int
+external val FloatType: Int
+external val NearestFilter: Int
+external val AlwaysDepth: Int
+external val GLSL3: String

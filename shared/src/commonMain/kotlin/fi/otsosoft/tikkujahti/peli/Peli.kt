@@ -425,6 +425,7 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         val lattia = maailma.lattia ?: return
         val alas = lattia.lahinPiste(V3(pallo.p.x, lattia.keskus.y, pallo.p.z), 0.06f)
         val u = Ukko(seuraavaId++, vanha.ulkonako, alas, suuntakulma((alas - kamera.paikka).vaakaan()), rnd.nextInt(), alkuKorkeus = (pallo.p.y - alas.y).coerceAtLeast(0.02f))
+        u.esteeton = seinaton
         u.lattia = lattia
         u.maanTaso = lattia.keskus.y
         u.katsoja = kamera.paikka
@@ -750,6 +751,9 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         return (if (varjot.isNotEmpty() && rnd.nextFloat() < 0.7f) varjot else paikat).randomOrNull(rnd)?.piste?.let { lattia.lahinPiste(it, 0.06f) }
     }
 
+    /** For the figures: whether the way between two points on the floor is clear of known walls. */
+    private val seinaton: (V3, V3) -> Boolean = { a, b -> esteeton(a + V3.Y * 0.1f, b + V3.Y * 0.1f) }
+
     /** Whether anything known (a wall, a table's side) stands between two points. */
     private fun esteeton(a: V3, b: V3): Boolean {
         val d = b - a
@@ -837,6 +841,7 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
             val u = Ukko(seuraavaId++, ulkonako, paikka, suuntakulma((kamera.paikka - paikka).vaakaan()), rnd.nextInt(), alkuKorkeus = korkeus, pinta = pinta)
             u.maanTaso = lattia.keskus.y
             u.katsoja = kamera.paikka
+            u.esteeton = seinaton
             // To be looked for, a figure has to stay somewhere (the wall climbers have their own routes)
             if (etsinta && pinta === lattia && tyyppi != Tyyppi.KIIPEILIJA && tyyppi != Tyyppi.NINJA) u.koti = paikka
             ukot += u

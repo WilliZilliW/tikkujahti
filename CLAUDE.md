@@ -90,6 +90,16 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
   (`paivitaAarteet`), ujot ukot ja piiloukot hakeutuvat niihin (`Peli.piilota`), ja AR:ssä uusista löydöistä
   kerrotaan (`ilmoitaLoydot`). Selaimen AR piirtää tunnistettujen pintojen ääriviivat.
   **Uutta tunnistusta ei ole vielä ajettu laitteella.**
+- **Ukot eivät näy seinien läpi** (omistajan vaatimus 23.11.2026). Kaksi keinoa yhdessä:
+  syvyyspeitto (todellisen huoneen syvyys syvyyspuskuriin ennen ukkoja: Androidissa SceneViewin
+  `ARCameraStream.isDepthOcclusionEnabled`, selaimessa `web/Syvyyspeitto.kt`, joka piirtää CPU-syvyyskuvasta
+  koko ruudun nelikulmion `gl_FragDepth`illä, 2 % + 4 cm mitatun pinnan taakse, ettei seisova tai kiipeävä ukko
+  leikkaudu) ja peittolevyt (`mesh/Peittajat.kt`: tunnistetut seinät ja pöytätasot näkymättöminä levyinä 5 cm
+  pinnan takana, `TAAKSE`; Androidissa `createOcclusionInstance` + `OCCLUDER_PRIORITY` ja
+  `isOccluderMeshEnabled`, selaimessa `colorWrite = false`), jotka toimivat myös ilman syvyyttä.
+  Lisäksi ukot eivät valitse kävelykohdetta tunnetun seinän takaa (`Ukko.esteeton`, `Peli.seinaton`).
+  Kuvatilan kokeet: `index.html?kuva=1&t=9&siemen=9&syvyystesti=1` (keinotekoinen syvyys: oikealla "seinä"
+  1,2 m päässä piilottaa kaiken takanaan) ja `&seinatesti=1` (peittolevy vasemmalla). Molemmat tarkistettu kuvina.
 - `ukko/Ukko.kt` – aivot ja animaatio, `ukko/Nukke.kt` – ragdoll, `Asento`, `Ulkonako` (mitat, luonne, värit).
   Ukko suosii kävelykohteita pelaajan näkökentässä (`katsojanSuunta`).
 - `mesh/Verkko.kt` – kiinteän topologian verkko osittain (materiaaleittain). `mesh/UkkoVerkko.kt` – ukko:
@@ -174,6 +184,9 @@ ja tarkista, että ajot menivät läpi.
   kohdalleen, pyyhkäisy dom-overlayn läpi, varjo (`ShadowMaterial`).
 - Etsintäpeli: tuntuuko etsiminen hyvältä talossa (matkat 1,2–4 m, 6,5 m, 4 ukkoa), ilmestyykö ukkoja seinien
   läpi viereiseen huoneeseen (tunnistamattoman seinän taakse voi ilmestyä), auttavatko reunanuolet sopivasti.
+- Seinien läpi näkyminen: piiloutuvatko ukot seinien, sohvien ja ovenpielten taakse; leikkautuvatko lattialla
+  seisovan ukon jalat syvyyskohinan takia (Androidin syvyyspeitossa ei ole omaa varaa, selaimessa on 2 % + 4 cm);
+  toimiiko selaimen syvyyspeitto oikealla puhelimella (`normDepthBufferFromNormView`, projektio).
 - Ympäristön tunnistus (uusi, syvyyskuvista): syntyykö pöydistä, seinistä ja katosta pintoja katselemalla,
   osuvatko ääriviivat kohdalleen, pysyvätkö ne paikallaan kävellessä. Androidissa: antaako puhelin raakasyvyyden
   `DepthMode.AUTOMATIC`-tilassa (muuten käytetään tasoitettua), riittääkö nopeus (`ArMaailma.syvyys` ~8/s).

@@ -575,6 +575,27 @@ class PeliTest {
     }
 
     @Test
+    fun ukkoEiKavelyTunnetunSeinanLapi() {
+        // A wall across the floor, and the player behind it: the figure wants to come closer, but not through it
+        val seina = Pinta.suorakaide("seina", PinnanLaji.SEINA, V3(0f, 1f, -0.4f), V3.Z, V3.X, 4f, 2f)
+        fun kavele(seinaTiedossa: Boolean): Int {
+            val u = Ukko(1, Peli.luoUlkonako(Tyyppi.TAVALLINEN, Ulkonako.VARIT[1], kotlin.random.Random(2)), V3(0f, 0f, -0.3f), 0f, 5)
+            u.lattia = lattia
+            u.katsoja = V3(0f, 1.4f, -1.9f)
+            if (seinaTiedossa) u.esteeton = { a, b -> seina.etaisyys(a) * seina.etaisyys(b) >= 0f }
+            var lapi = 0
+            repeat(60 * 90) {
+                u.paivita(dt)
+                u.aanet.clear()
+                if (seina.etaisyys(u.juuri) < 0f) lapi++
+            }
+            return lapi
+        }
+        assertTrue(kavele(false) > 0, "ilman seinää ukko ei edes yrittänyt pelaajan luo: testi ei mittaa mitään")
+        assertEquals(0, kavele(true), "ukko käveli seinän läpi")
+    }
+
+    @Test
     fun paikatLoytyvatPinnoista() {
         // A table 0.7 m up and a wall behind it, as the recogniser would give them
         val poyta = Pinta.suorakaide("poyta", PinnanLaji.POYTA, V3(0f, 0.7f, -0.7f), V3.Y, V3.X, 1.2f, 0.6f)
