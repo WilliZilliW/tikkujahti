@@ -125,7 +125,7 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
     var nuolia = 0
         private set
     private val haku = LattianHaku()
-    private val tunnistin = Tunnistin()
+    private var tunnistin: Tunnistin? = null
     private var varjoAjastin = 0f
     private var aika = 0f
     private val varjot = ArrayList<Pair<V3, Float>>()
@@ -138,17 +138,20 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         edellinen = nyt
         seuranta = ArMaailma.kamera(frame.camera, kamera)
         if (!seuranta || dt <= 0f) return
-        val (pinnat, lattiataso) = ArMaailma.pinnat(session, kamera.paikka)
+        // The room is learnt from the depth images, beyond the planes ARCore finds by itself; the recogniser
+        // keeps its surfaces on ARCore anchors so they follow tracking's corrections
+        val tunnistin = this.tunnistin ?: Tunnistin(ArMaailma.ankkurit(session)).also { this.tunnistin = it }
+        val nahtyLattia = ArMaailma.syvyys(frame, kamera, tunnistin)
+        // Until ARCore has found the floor, play on one seen in depth or, failing that, a guessed one, so that
+        // figures turn up without a wait
+        haku.ruutu(dt, kamera.paikka, nahtyLattia)
+        val (pinnat, lattiataso) = ArMaailma.pinnat(session, kamera.paikka, haku.y)
         lattia = lattiataso
-        // Until ARCore has found the floor, play on a guessed one, so that figures turn up without a wait
-        haku.ruutu(dt, kamera.paikka, null)
         val arvaus = if (lattiataso == null) haku.lattia(kamera.paikka) else null
         val lattiaY = lattiataso?.centerPose?.ty() ?: arvaus?.keskus?.y
-        // The room is probed all the time, beyond the planes ARCore finds by itself
-        // (every frame: the recogniser also watches how fast the phone turns and moves between looks)
-        if (koko.width > 0) ArMaailma.mittaa(frame, koko.width, koko.height, kamera, dt, tunnistin)
         val kaikki = ArrayList(pinnat)
         if (arvaus != null) kaikki += arvaus
+        peli.maailma.kattoY = tunnistin.kattoY(lattiaY)
         for (t in tunnistin.pinnat(lattiaY)) {
             val keski = t.pisteTasolta(0f, 0f)
             if (kaikki.none { it.laji == t.laji && kotlin.math.abs(it.etaisyys(keski)) < 0.1f && it.sisalla(keski, 0.1f) }) kaikki += t

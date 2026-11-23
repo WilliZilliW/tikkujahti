@@ -173,6 +173,8 @@ class Maailma {
 
     /** Dark spots the platform has measured from the camera image (points on or near the floor). */
     var varjot: List<V3> = emptyList()
+    /** Height of the ceiling where the platform has measured one, else null (the game then imagines one). */
+    var kattoY: Float? = null
     /** The interesting spots of the room, worked out from the surfaces by the game every now and then. */
     var paikat: List<Paikka> = emptyList()
 

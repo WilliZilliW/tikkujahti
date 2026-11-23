@@ -852,9 +852,9 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
                 }
             }
             Tyyppi.KATTO -> {
-                // The real ceiling if one is known, otherwise an imagined one at room height
+                // The real ceiling if one is known here, otherwise one at the measured ceiling height or room height
                 val katto = maailma.pinnat.filter { it.laji == PinnanLaji.KATTO && it.sisalla(p) }.minByOrNull { it.keskus.y }
-                    ?: Pinta("oma-katto", PinnanLaji.KATTO, V3(p.x, lattia.keskus.y + OLETUSKATTO, p.z), -V3.Y, V3.X, List(12) { i ->
+                    ?: Pinta("oma-katto", PinnanLaji.KATTO, V3(p.x, maailma.kattoY ?: (lattia.keskus.y + OLETUSKATTO), p.z), -V3.Y, V3.X, List(12) { i ->
                         (cos(i * PI / 6) * 1.2).toFloat() to (sin(i * PI / 6) * 1.2).toFloat()
                     }).also { omaKatto = it }
                 luo(V3(p.x, katto.keskus.y, p.z), katto)

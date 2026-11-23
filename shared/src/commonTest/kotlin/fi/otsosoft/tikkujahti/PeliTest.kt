@@ -575,41 +575,17 @@ class PeliTest {
     }
 
     @Test
-    fun tunnistinKokoaaPinnatMittauksista() {
-        val t = Tunnistin()
-        val rnd = kotlin.random.Random(4)
-        fun kohina() = (rnd.nextFloat() - 0.5f) * 0.02f
-        repeat(300) {
-            // A table top 0.7 m up, a wall behind it seen from 0.3 to 1.5 m, a ceiling, and a slanted thing to ignore
-            t.nayte(V3(rnd.nextFloat() * 1.2f - 0.6f, 0.7f + kohina(), -1f + rnd.nextFloat() * 0.6f), V3(kohina(), 1f, kohina()))
-            t.nayte(V3(rnd.nextFloat() * 2f - 1f, 0.3f + rnd.nextFloat() * 1.2f, -2f + kohina()), V3(kohina(), kohina(), 1f))
-            t.nayte(V3(rnd.nextFloat() - 0.5f, 2.4f + kohina(), rnd.nextFloat() - 0.5f), V3(0f, -1f, 0f))
-            t.nayte(V3(rnd.nextFloat(), 1f, rnd.nextFloat()), V3(0f, 0.7f, 0.7f))
-            // The floor itself is not the recogniser's business
-            t.nayte(V3(rnd.nextFloat() * 2f - 1f, kohina(), rnd.nextFloat() * 2f - 1f), V3.Y)
-        }
-        val pinnat = t.pinnat(0f)
-        assertEquals(setOf(PinnanLaji.POYTA, PinnanLaji.SEINA, PinnanLaji.KATTO), pinnat.map { it.laji }.toSet())
-        assertEquals(3, pinnat.size, "pintoja: " + pinnat.map { it.laji to it.ala })
-        val poyta = pinnat.first { it.laji == PinnanLaji.POYTA }
-        assertEquals(0.7f, poyta.keskus.y, 0.02f)
-        assertTrue(poyta.sisalla(V3(0f, 0.7f, -0.7f)) && !poyta.sisalla(V3(1.2f, 0.7f, -0.7f)) && poyta.ala in 0.5f..1.1f, "pöydän ala ${poyta.ala}")
-        val seina = pinnat.first { it.laji == PinnanLaji.SEINA }
-        assertTrue((seina.normaali - V3.Z).pituus < 0.05f)
-        assertTrue(seina.sisalla(V3(0f, 0.05f, -2f)), "seinä ei ulotu lattiaan")
-        assertTrue(!seina.sisalla(V3(0f, 2.2f, -2f)))
-        // Unchanged surfaces keep their identity; a new measurement changes only its own surface
-        assertTrue(t.pinnat(0f).zip(pinnat).all { (a, b) -> a === b })
-        t.nayte(V3(0.9f, 0.7f, -0.7f), V3.Y)
-        val uudet = t.pinnat(0f)
-        assertTrue(uudet.first { it.laji == PinnanLaji.SEINA } === seina && uudet.first { it.laji == PinnanLaji.POYTA } !== poyta)
-
-        // Places: a nook under the table, and a corner where two walls meet
+    fun paikatLoytyvatPinnoista() {
+        // A table 0.7 m up and a wall behind it, as the recogniser would give them
+        val poyta = Pinta.suorakaide("poyta", PinnanLaji.POYTA, V3(0f, 0.7f, -0.7f), V3.Y, V3.X, 1.2f, 0.6f)
+        val seina = Pinta.suorakaide("seina", PinnanLaji.SEINA, V3(0f, 1f, -2f), V3.Z, V3.X, 2f, 2f)
         val m = fi.otsosoft.tikkujahti.maailma.Maailma()
-        m.asetaPinnat(uudet + listOf(
+        m.asetaPinnat(listOf(
+            poyta, seina,
             Pinta.suorakaide("lattia", PinnanLaji.LATTIA, V3.NOLLA, V3.Y, V3.X, 6f, 6f),
             Pinta.suorakaide("sivuseina", PinnanLaji.SEINA, V3(-1.2f, 1f, -1f), V3.X, V3.Z, 2f, 2f),
         ))
+        // Places: a nook under the table, and a corner where two walls meet
         val paikat = Paikat.etsi(m, listOf(V3(1f, 0.02f, 1f), V3(0f, 1.5f, 0f)))
         assertEquals(setOf(PaikanLaji.KOLO, PaikanLaji.NURKKA, PaikanLaji.VARJO), paikat.map { it.laji }.toSet(), "paikat: " + paikat.map { it.laji to it.piste })
         val nurkka = paikat.first { it.laji == PaikanLaji.NURKKA }.piste
@@ -621,64 +597,8 @@ class PeliTest {
     }
 
     @Test
-    fun katseLaskeePinnanSuunnanItse() {
+    fun alustanTasotKaannetaanKohtiKameraa() {
         val kam = V3(0f, 1.4f, 0f)
-        // A fan of points on a plane through p0 spanned by a and b
-        // (each look on a fresh recogniser's clock is far apart in time, so turning between looks is slow)
-        fun viuhka(t: Tunnistin, p0: V3, a: V3, b: V3, kamera: V3 = kam, eteen: V3 = p0 - kamera, aika: Float = 10f) = t.katse(
-            kamera, eteen, aika, p0, p0 - a, p0 + a, p0 + b, p0 - b, listOf(p0 - a - b, p0 + a - b, p0 - a + b, p0 + a + b),
-        )
-        val t = Tunnistin()
-        val rnd = kotlin.random.Random(3)
-        repeat(60) {
-            val x = rnd.nextFloat() - 0.5f
-            val z = rnd.nextFloat() - 0.5f
-            // Ceiling above, floor below, a table top, a wall: whichever way the fan happens to be wound
-            val k = assertNotNull(viuhka(t, V3(x, 2.5f, z), V3.X * 0.15f, V3.Z * (if (it % 2 == 0) 0.15f else -0.15f)))
-            assertTrue(k.second.y < -0.99f, "katto osoittaa ${k.second}")
-            assertTrue(assertNotNull(viuhka(t, V3(x, 0f, z - 1f), V3.X * 0.15f, V3.Z * -0.15f)).second.y > 0.99f)
-            viuhka(t, V3(x * 0.8f, 0.72f, z * 0.5f - 1.5f), V3.X * 0.1f, V3.Z * 0.1f)
-            assertTrue(assertNotNull(viuhka(t, V3(x, 1f + z, -3f), V3.X * 0.15f, V3.Y * 0.15f)).second.z > 0.99f)
-        }
-        val lajit = t.pinnat(0f).map { it.laji }
-        assertEquals(listOf(PinnanLaji.POYTA, PinnanLaji.SEINA, PinnanLaji.KATTO), lajit.sorted(), "pinnat: $lajit")
-        assertTrue(t.pinnat(0f).first { it.laji == PinnanLaji.KATTO }.normaali.y < 0f)
-
-        // A fan across a corner is not flat: nothing comes of it
-        val t2 = Tunnistin()
-        repeat(40) {
-            assertNull(t2.katse(kam, V3(0f, -0.4f, -2f), 10f, V3(0f, 1f, -2f), V3(-0.2f, 1f, -2f), V3(0.2f, 1f, -1.7f), V3(0f, 1.2f, -2f), V3(0f, 0.8f, -2f)))
-            assertNull(t2.katse(kam, V3(0f, -0.4f, -2f), 10f, V3(0f, 1f, -2f), null, V3(0.2f, 1f, -2f), V3(0f, 1.2f, -2f), V3(0f, 0.8f, -2f)))
-        }
-        assertTrue(t2.pinnat(0f).isEmpty())
-
-        // When the camera's position jumps (tracking lost), what it sees next is not trusted for a moment
-        val t3 = Tunnistin()
-        assertNotNull(viuhka(t3, V3(0f, 2.5f, 0f), V3.X * 0.15f, V3.Z * 0.15f))
-        assertNull(viuhka(t3, V3(0f, 1.1f, 0f), V3.X * 0.15f, V3.Z * 0.15f, kam + V3(0.6f, 0f, 0f)))
-        assertNull(viuhka(t3, V3(0f, 1.1f, 0f), V3.X * 0.15f, V3.Z * 0.15f, kam + V3(0.6f, 0f, 0f)))
-        repeat(60) { viuhka(t3, V3(0f, 2.5f, 0f), V3.X * 0.15f, V3.Z * 0.15f, kam + V3(0.6f, 0f, 0f)) }
-        assertTrue(t3.pinnat(0f).none { it.laji == PinnanLaji.POYTA })
-
-        // The phone's attitude: a look taken while swinging round fast, one that does not land where the camera
-        // points, and a surface seen at a glancing angle are all left out
-        val t4 = Tunnistin()
-        val lattiaP = V3(0f, 0f, -1f)
-        assertNotNull(viuhka(t4, lattiaP, V3.X * 0.15f, V3.Z * 0.15f, aika = 1f / 60f))
-        assertNull(viuhka(t4, V3(0f, 2.5f, 0.2f), V3.X * 0.15f, V3.Z * 0.15f, aika = 1f / 60f), "nopea heilautus kelpasi")
-        assertNotNull(viuhka(t4, V3(0f, 2.5f, 0.2f), V3.X * 0.15f, V3.Z * 0.15f, aika = 1f / 60f), "paikallaan pysyvä katse ei kelvannut")
-        assertNull(viuhka(t4, lattiaP, V3.X * 0.15f, V3.Z * 0.15f, eteen = V3(1f, -1.4f, -1f)), "osuma sivussa katseesta kelpasi")
-        assertNull(viuhka(t4, V3(0f, 0f, -9f), V3.X * 0.15f, V3.Z * 0.15f), "viisto katse lattiaan kelpasi")
-
-        // A drifting ceiling stays one ceiling
-        val t5 = Tunnistin()
-        val rnd5 = kotlin.random.Random(8)
-        repeat(120) {
-            val ryominta = (it / 40) * 0.15f // tracking slips 15 cm at a time while looking up
-            viuhka(t5, V3(rnd5.nextFloat() * 2f - 1f, 2.5f + ryominta, rnd5.nextFloat() * 2f - 1f), V3.X * 0.15f, V3.Z * 0.15f)
-        }
-        assertEquals(1, t5.pinnat(0f).count { it.laji == PinnanLaji.KATTO }, "kattoja syntyi useita päällekkäin")
-
         // A platform's own plane is turned to face the camera: a ceiling whose normal is given as "up" hangs down
         val katto = assertNotNull(Tunnistin.tasosta("k", V3(0f, 2.5f, 0f), V3.X, V3.Y, listOf(-1f to -1f, 1f to -1f, 1f to 2f, -1f to 2f), kam, 0f))
         assertEquals(PinnanLaji.KATTO, katto.laji)

@@ -54,31 +54,42 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
   `maailma/LattianHaku.kt` – AR-lattia ilman pelaajan toimia (omistajan palaute 22.11.2026: lattiaa ei saa
   joutua napauttamaan, ukkojen pitää vain alkaa ilmestyä): ensimmäinen ylöspäin osoittava pinta reilusti
   puhelimen alla on lattia, selvästi alempi korvaa sen, ja 2,5 s:n jälkeen lattia arvataan 1,25 m puhelimen
-  alle, kunnes oikea löytyy. Selain syöttää sille hit-testin, Android käyttää arvausta kunnes ARCore löytää tason.
-- **Ympäristön tunnistus** (omistajan toive 22.11.2026: pelin pitää tunnistaa pintoja ja paikkoja aktiivisesti):
-  `maailma/Tunnistin.kt` kokoaa yksittäisistä mittauksista (piste + pinnan suunta) tasoja: pöydät, seinät
-  (jatketaan lattiaan asti), katot. Selaimen AR ampuu joka ruudulla 9 hit-test-sädettä näkymän läpi ja käyttää
-  lisäksi selaimen omia tasoja (`plane-detection`, jos laite tarjoaa); Android syöttää tunnistimelle
-  syvyys- ja piirrepisteosumat 3×3-ruudukosta ARCoren omien tasojen lisäksi (`ArMaailma.mittaa`, DepthMode
-  AUTOMATIC). `Paikat.etsi` päättelee pinnoista paikat: NURKKA (kaksi seinää kohtaa), KOLO (lattia 0,5–1,3 m
-  korkean tason alla), KORKEA (yli 0,8 m tason päällä) ja VARJO. Varjoisat kohdat mitataan vain Androidissa
-  kamerakuvan kirkkaudesta (`ArMaailma.varjot` → `Maailma.varjot`); selaimessa niitä ei ole. Peli käyttää
-  paikkoja: erikoispallot päätyvät niihin (`paivitaAarteet`), ujot ukot ja piiloukot hakeutuvat niihin
-  (`Peli.piilota`), ja AR:ssä uusista löydöistä kerrotaan pelaajalle (`ilmoitaLoydot`). Selaimen AR piirtää
-  tunnistettujen pintojen ääriviivat.
-  **Laitepalaute 23.11.2026: tunnistus meni sekaisin, varsinkin kun puhelinta osoitti välillä kattoon.**
-  Korjattu (laitteella vahvistamatta): pinnan suuntaa ei enää uskota alustalta, vaan `Tunnistin.katse` laskee
-  sen 3×3-viuhkan osumapisteistä itse, kääntää normaalin kohti kameraa (ylhäällä oleva vaakapinta on katto, ei
-  pöytä), hylkää epätasaiset viuhkat (reunat, nurkat) ja kaiken hetkeksi kameran paikan hypähdettyä
-  (seuranta hukassa; selaimessa myös `emulatedPosition`). Pinta vaatii 6 mittausta. Alustan omat tasot
-  käännetään samoin (`Tunnistin.tasosta`, Androidin `ArMaailma.pinta`). Lattia siirtyy alemmas vasta, kun
-  alempi pinta on nähty 8 kertaa samalla korkeudella (`LattianHaku.VAHVISTUS`). Puhelimen asento ja liike
-  ovat mukana (omistajan ehdotus): `katse` saa kameran suunnan ja `dt`:n ja hylkää mittauksen, jos puhelin
-  kääntyy yli 2,2 rad/s tai liikkuu yli 1,6 m/s, jos osuma ei ole katseen suunnassa, tai jos pinta nähdään
-  liian viistosti (`VIISTO`). Lähekkäiset kattomittaukset yhdistetään yhteen kattoon (`KATON_VARA` 0,45 m),
-  koska kattoa katsoessa paikannus ryömii. Jos tunnistus sekoilee yhä,
-  seuraavat epäillyt: seurannan ryömintä (pinnat eivät vanhene eivätkä siirry), samaan tasoon osuvat eri
-  pinnat (`PAKSUUS` 7 cm) ja ääriviivojen uudelleenpiirto 0,4 s välein.
+  alle, kunnes oikea löytyy. Molemmat alustat syöttävät sille syvyyskuvassa nähdyn lattian (`Tunnistin.syvyys`),
+  selain lisäksi keskisäteen hit-testin; Android käyttää ARCoren lattiatasoa heti kun sellainen on.
+- **Ympäristön tunnistus** (omistajan toive 22.11.2026: pelin pitää tunnistaa pintoja ja paikkoja aktiivisesti).
+  **Kirjoitettu uusiksi 23.11.2026**, koska vanha (9 säteen osumaviuhka, pisteet pysyvästi maailman
+  koordinaateissa, kupera kuori kaikista pisteistä) sekoili laitteella. Syyt: selaimen hit-test osuu oletuksena
+  vain selaimen jo tuntemiin tasoihin (viuhka ei löytänyt mitään uutta), seurannan korjautuessa ARCoren omat
+  tasot siirtyivät mutta meidän pisteemme eivät (tuplat ja haamut), eikä mikään unohtunut.
+  Nyt `maailma/Tunnistin.kt` oppii huoneen **syvyyskuvista**: alusta antaa ruudukon maailmapisteitä
+  (`syvyys(aika, kamera, eteen, pisteet, leveys, korkeus)`), tunnistin laskee pisteiden normaalit naapureista,
+  etsii yhdestä kuvasta tasot histogrammiäänestyksellä (vaakapinnat korkeuden mukaan; seinät ensin suunnan,
+  sitten etäisyyden mukaan, ja seinän suunta sovitetaan lopuksi pisteiden sijainneista PCA:lla) ja yhdistää ne
+  tunnettuihin. Tunnetut pinnat muistavat 10 cm:n ruudut, joissa ne on nähty (ruutu kelpaa 2–3 eri kuvan
+  jälkeen; yhtenäiset ruuturyhmät ovat omia pintojaan, joten kaksi pöytää pysyy kahtena), ja elävät
+  `Ankkuri`n suhteen (ARCore `createAnchor`, WebXR `createAnchor`), joten ne siirtyvät seurannan korjauksen
+  mukana. Ruutu, jonka läpi nähdään (mitattu pinta on selvästi tason takana), pyyhkiytyy pois. Rinnakkaiset
+  koskettavat pinnat alle 12 cm:n päässä yhdistetään (`YHDISTYS`). Kun seiniä on nähty tarpeeksi, huoneen
+  suunta opitaan ja alle 8° vinot seinähavainnot suoristetaan siihen (`SUORA`). Mittaus hylätään, jos puhelin
+  kääntyy yli 1,2 rad/s tai liikkuu yli 0,9 m/s tai kameran paikka hyppää (0,75 s tauko). Katon korkeus
+  (`kattoY`) menee `Maailma.kattoY`:hin, ja kattoukko käyttää sitä, kun kohdalla ei ole tunnistettua kattoa.
+  `syvyys` palauttaa näkemänsä lattian korkeuden `LattianHaku`un.
+  **Simulaattoritesti** `TunnistinTest`: puhelin kävelee mallihuoneessa (seinät, pöytä, kaappi, katto) ja
+  syvyyskuvat lasketaan säteillä kohinan (1,2 % + 4 mm), aukkojen (seinät 45 %), harhamittausten ja seurannan
+  ryöminnän kanssa, joka 40 s kohdalla korjautuu hypyllä; ankkureilla ja ilman. Tarkistaa lattian, katon,
+  pöydät, jokaisen seinän kerran ja ettei haamuja synny. Kesti myös kaksinkertaisen kohinan 15 kävelyllä.
+  Android (`ArMaailma.syvyys`): ARCoren raakasyvyys + luotettavuus (alle 100/255 pois; jos raakasyvyyttä ei
+  ole, tasoitettu syvyys), 48 saraketta, enintään ~8 kuvaa/s, purku Raw Depth -codelabin kaavoilla
+  sensoriasennolla `camera.pose`. ARCoren omat ylöspäiset tasot luokitellaan lattian korkeuden mukaan (toinen
+  lattiapala on lattiaa, ei pöytä). Selain (`PeliSivu.arSyvyys`): `depth-sensing` (cpu-optimized) ja
+  `anchors` valinnaisina, 40 × 30 ruudukko joka kolmas ruutu; hit-testistä on jäljellä yksi keskisäde
+  lattian hakuun. Jos selain ei anna syvyyttä, tunnistus nojaa selaimen omiin tasoihin (`plane-detection`).
+  `Paikat.etsi` (nyt `maailma/Paikat.kt`) päättelee pinnoista paikat: NURKKA (kaksi seinää kohtaa), KOLO
+  (lattia 0,5–1,3 m korkean tason alla), KORKEA (yli 0,8 m tason päällä) ja VARJO (vain Androidissa
+  kamerakuvan kirkkaudesta, `ArMaailma.varjot`). Peli käyttää paikkoja: erikoispallot päätyvät niihin
+  (`paivitaAarteet`), ujot ukot ja piiloukot hakeutuvat niihin (`Peli.piilota`), ja AR:ssä uusista löydöistä
+  kerrotaan (`ilmoitaLoydot`). Selaimen AR piirtää tunnistettujen pintojen ääriviivat.
+  **Uutta tunnistusta ei ole vielä ajettu laitteella.**
 - `ukko/Ukko.kt` – aivot ja animaatio, `ukko/Nukke.kt` – ragdoll, `Asento`, `Ulkonako` (mitat, luonne, värit).
   Ukko suosii kävelykohteita pelaajan näkökentässä (`katsojanSuunta`).
 - `mesh/Verkko.kt` – kiinteän topologian verkko osittain (materiaaleittain). `mesh/UkkoVerkko.kt` – ukko:
@@ -163,8 +174,11 @@ ja tarkista, että ajot menivät läpi.
   kohdalleen, pyyhkäisy dom-overlayn läpi, varjo (`ShadowMaterial`).
 - Etsintäpeli: tuntuuko etsiminen hyvältä talossa (matkat 1,2–4 m, 6,5 m, 4 ukkoa), ilmestyykö ukkoja seinien
   läpi viereiseen huoneeseen (tunnistamattoman seinän taakse voi ilmestyä), auttavatko reunanuolet sopivasti.
-- Ympäristön tunnistus: syntyykö pöydistä, seinistä ja katosta pintoja katselemalla, osuvatko ääriviivat
-  kohdalleen, löytyykö varjoisia kohtia (Android), häiritseekö DepthMode AUTOMATIC mitään.
+- Ympäristön tunnistus (uusi, syvyyskuvista): syntyykö pöydistä, seinistä ja katosta pintoja katselemalla,
+  osuvatko ääriviivat kohdalleen, pysyvätkö ne paikallaan kävellessä. Androidissa: antaako puhelin raakasyvyyden
+  `DepthMode.AUTOMATIC`-tilassa (muuten käytetään tasoitettua), riittääkö nopeus (`ArMaailma.syvyys` ~8/s).
+  Selaimessa: antaako Chrome `depth-sensing`-syvyyden (cpu-optimized) ja ankkurit; jos ei, tunnistus jää
+  selaimen omiin tasoihin. Kynnysarvot (`Tunnistin`-companion) ovat simulaattorissa viritettyjä.
 - Heiton tuntuma (`Pyyhkaisy.lopeta`, `Peli.heita`: vauhti 3,2–7,5 m/s, `TAHTAYSAPU`, `OSUMA_APU`) ja
   väistöjen määrä (`Luonne.vaistotaito` 0,15–0,65) ovat arvauksia: säädä palautteen mukaan.
 
@@ -174,5 +188,5 @@ ja tarkista, että ajot menivät läpi.
 3. Issue #1:n seuraavat asiat: reunalla roikkuminen, ukot piiloon esineiden taakse kurkkimaan (paikat ovat
    nyt olemassa: `Maailma.paikat`), ketjut ja
    tornit, hyppiminen pinnalta toiselle, piilopaikat jotka vaihtuvat päivittäin, hatut ja asut, ukkokylä. Albumin vihjeet ja tyyppien yleisyys (`Peli.YLEISYYS`) kaipaavat pelitestausta.
-4. Depth API (piiloutuminen, osumat oikeisiin pintoihin), valon arvio selaimen AR:ään.
+4. Depth API piiloutumiseen (okkluusio) ja pallon osumiin oikeisiin pintoihin, valon arvio selaimen AR:ään.
 5. Ehdota pilviympäristön asennusskriptiksi yllä oleva SDK-asennus.

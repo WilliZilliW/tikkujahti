@@ -1,6 +1,9 @@
 package fi.otsosoft.tikkujahti.web
 
+import fi.otsosoft.tikkujahti.maailma.Ankkuri
+import fi.otsosoft.tikkujahti.maailma.Ankkurit
 import fi.otsosoft.tikkujahti.maailma.Huone
+import fi.otsosoft.tikkujahti.maailma.Muunnos
 import fi.otsosoft.tikkujahti.maailma.LattianHaku
 import fi.otsosoft.tikkujahti.maailma.Tunnistin
 import fi.otsosoft.tikkujahti.maailma.PinnanLaji
@@ -65,6 +68,57 @@ class PeliSivu(private val juuri: HTMLElement) {
     private var ar: dynamic = null
     private val osumalahteet = arrayOfNulls<Any>(MITTAUSSUUNNAT.size).unsafeCast<Array<dynamic>>()
     private val osumat = arrayOfNulls<V3>(MITTAUSSUUNNAT.size)
+    private val osumaYlos = BooleanArray(MITTAUSSUUNNAT.size)
+    /** Seconds of AR so far: the recogniser's clock. */
+    private var arAika = 0f
+    private var syvyysVuoro = 0
+    private var ruudukko = FloatArray(SARAKKEITA * RIVEJA * 3)
+    private val xrAnkkurit = ArrayList<XrAnkkuri>()
+    private var nykyRuutu: dynamic = null
+    private var nykyTila: dynamic = null
+
+    /** A WebXR anchor: until the browser has made it (or if it cannot), it stays where it was asked for. */
+    private inner class XrAnkkuri(alku: V3) : Ankkuri {
+        var ankkuri: dynamic = null
+        var poistettu = false
+        private var viimeisin = Muunnos.siirto(alku)
+        override val muunnos: Muunnos get() = viimeisin
+
+        fun paivita(ruutu: dynamic, tila: dynamic) {
+            val a = ankkuri ?: return
+            val m = ruutu.getPose(a.anchorSpace, tila)?.transform?.matrix ?: return
+            fun v(i: Int) = V3((m[i] as Double).toFloat(), (m[i + 1] as Double).toFloat(), (m[i + 2] as Double).toFloat())
+            viimeisin = Muunnos(v(12), v(0), v(4), v(8))
+        }
+
+        override fun irrota() {
+            poistettu = true
+            try {
+                ankkuri?.delete()
+            } catch (e: Throwable) {
+            }
+            xrAnkkurit.remove(this)
+        }
+    }
+
+    /** Anchors for the recogniser, where the browser offers them (the "anchors" feature). */
+    private val ankkuriTehdas = Ankkurit { p ->
+        val ruutu = nykyRuutu
+        val tila = nykyTila
+        if (ruutu == null || ruutu.createAnchor == undefined) {
+            null
+        } else {
+            val a = XrAnkkuri(p)
+            xrAnkkurit += a
+            try {
+                val muunnosLuokka = window.asDynamic().XRRigidTransform
+                ruutu.createAnchor(uusiMuunnos(muunnosLuokka, olio { x = p.x.toDouble(); y = p.y.toDouble(); z = p.z.toDouble(); w = 1.0 }), tila)
+                    .then({ x: dynamic -> if (a.poistettu) x.delete() else a.ankkuri = x }, { _: dynamic -> })
+            } catch (e: Throwable) {
+            }
+            a
+        }
+    }
     private var seuranta = true
     private var tunnistin = Tunnistin()
     private var pintaAjastin = 0f
@@ -369,14 +423,21 @@ class PeliSivu(private val juuri: HTMLElement) {
         val xr = window.navigator.asDynamic().xr
         val asetukset = olio {
             requiredFeatures = arrayOf("hit-test")
-            optionalFeatures = arrayOf("dom-overlay", "plane-detection")
+            // Depth images teach the game the room; anchors keep what it learnt in place as tracking corrects itself
+            optionalFeatures = arrayOf("dom-overlay", "plane-detection", "depth-sensing", "anchors")
             domOverlay = olio { root = hud }
+            depthSensing = olio {
+                usagePreference = arrayOf("cpu-optimized")
+                dataFormatPreference = arrayOf("luminance-alpha", "float32")
+            }
         }
         xr.requestSession("immersive-ar", asetukset).then({ istunto: dynamic ->
             ar = istunto
             arLattia = false
             haku = LattianHaku()
-            tunnistin = Tunnistin()
+            for (a in xrAnkkurit.toList()) a.irrota()
+            tunnistin = Tunnistin(ankkuriTehdas)
+            arAika = 0f
             for (i in osumalahteet.indices) osumalahteet[i] = null
             uusiPeli()
             peli.ilmoitaLoydot = true
@@ -417,6 +478,9 @@ class PeliSivu(private val juuri: HTMLElement) {
 
     private fun lopetaAr() {
         ar = null
+        for (a in xrAnkkurit.toList()) a.irrota()
+        nykyRuutu = null
+        nykyTila = null
         for (i in osumalahteet.indices) osumalahteet[i] = null
         piirraAariviivat(emptyList())
         arLattia = false
@@ -433,6 +497,7 @@ class PeliSivu(private val juuri: HTMLElement) {
     }
 
     private fun uusiSade(luokka: dynamic, alku: dynamic, suunta: dynamic): dynamic = js("new luokka(alku, suunta)")
+    private fun uusiMuunnos(luokka: dynamic, paikka: dynamic): dynamic = js("new luokka(paikka)")
 
     private fun uusiPeli() {
         tallennettu = 0
@@ -472,11 +537,20 @@ class PeliSivu(private val juuri: HTMLElement) {
             val m = tulokset[0].getPose(tila)?.transform?.matrix
             if (m == null || m == undefined) continue
             osumat[i] = V3((m[12] as Double).toFloat(), (m[13] as Double).toFloat(), (m[14] as Double).toFloat())
+            osumaYlos[i] = (m[5] as Double) > 0.9 // the hit pose's y axis is the surface's normal
         }
+        arAika += dt
+        nykyRuutu = xrRuutu
+        nykyTila = tila
+        for (a in xrAnkkurit.toList()) a.paivita(xrRuutu, tila)
         // (while the phone has lost its place, nothing it sees is used)
         if (seuranta) {
-            val katse = tunnistin.katse(kamera.paikka, kamera.kehys.eteen, dt, osumat[0], osumat[1], osumat[2], osumat[3], osumat[4], osumat.drop(5))
-            if (katse != null && katse.second.y > 0.9f) havaittu = katse.first.y
+            val keski = osumat[0]
+            if (keski != null && osumaYlos[0]) havaittu = keski.y
+            // Every third frame the depth image, where the browser gives one, teaches the recogniser the room
+            if (asento != null && asento != undefined && ++syvyysVuoro % 3 == 0) {
+                arSyvyys(xrRuutu, asento.views[0])?.let { y -> havaittu = havaittu?.let { kotlin.math.min(it, y) } ?: y }
+            }
         }
         haku.ruutu(dt, kamera.paikka, havaittu)
         val lattia = haku.lattia(kamera.paikka) ?: return
@@ -492,6 +566,7 @@ class PeliSivu(private val juuri: HTMLElement) {
             if (pinnat.none { it.laji == t.laji && kotlin.math.abs(it.etaisyys(keski)) < 0.1f && it.sisalla(keski, 0.1f) }) pinnat += t
         }
         peli.maailma.asetaPinnat(pinnat)
+        peli.maailma.kattoY = tunnistin.kattoY(lattia.keskus.y)
         piirraAariviivat(pinnat)
         varjotaso.visible = true
         varjotaso.position.set(lattia.keskus.x.toDouble(), lattia.keskus.y.toDouble(), lattia.keskus.z.toDouble())
@@ -500,6 +575,54 @@ class PeliSivu(private val juuri: HTMLElement) {
             arLattia = true
             vihje.textContent = "Ukkoja ja palloja on ympäri taloa: kulje ja etsi. Pyyhkäise ylöspäin heittääksesi."
         }
+    }
+
+    /**
+     * Samples the depth image of [nakyma] (WebXR depth sensing, CPU) into a grid of world points for the
+     * recogniser. Returns the floor height it saw, if any; null also when the browser gives no depth.
+     */
+    private fun arSyvyys(xrRuutu: dynamic, nakyma: dynamic): Float? {
+        // Only CPU depth can be read here (a GPU-only session would throw on every read)
+        val kaytto = xrRuutu.session?.depthUsage
+        if (kaytto != null && kaytto != undefined && kaytto != "cpu-optimized") return null
+        val tieto = try {
+            xrRuutu.getDepthInformation(nakyma)
+        } catch (e: Throwable) {
+            null
+        }
+        if (tieto == null || tieto == undefined || tieto.getDepthInMeters == undefined) return null
+        val p = nakyma.projectionMatrix
+        val m = nakyma.transform.matrix
+        val p0 = (p[0] as Double).toFloat()
+        val p5 = (p[5] as Double).toFloat()
+        val p8 = (p[8] as Double).toFloat()
+        val p9 = (p[9] as Double).toFloat()
+        val mm = FloatArray(16) { (m[it] as Double).toFloat() }
+        for (gy in 0 until RIVEJA) for (gx in 0 until SARAKKEITA) {
+            // Normalised view coordinates: origin top left, y down
+            val u = (gx + 0.5) / SARAKKEITA
+            val v = (gy + 0.5) / RIVEJA
+            val d = try {
+                (tieto.getDepthInMeters(u, v) as Double).toFloat()
+            } catch (e: Throwable) {
+                0f
+            }
+            val o = (gy * SARAKKEITA + gx) * 3
+            if (!(d > 0f)) {
+                ruudukko[o] = Float.NaN; ruudukko[o + 1] = Float.NaN; ruudukko[o + 2] = Float.NaN
+                continue
+            }
+            // Depth is the distance from the camera's plane; back through the lens into view space (looking down -z)
+            val ndcX = (2.0 * u - 1.0).toFloat()
+            val ndcY = (1.0 - 2.0 * v).toFloat()
+            val x = d * (ndcX + p8) / p0
+            val y = d * (ndcY + p9) / p5
+            val z = -d
+            ruudukko[o] = mm[0] * x + mm[4] * y + mm[8] * z + mm[12]
+            ruudukko[o + 1] = mm[1] * x + mm[5] * y + mm[9] * z + mm[13]
+            ruudukko[o + 2] = mm[2] * x + mm[6] * y + mm[10] * z + mm[14]
+        }
+        return tunnistin.syvyys(arAika, kamera.paikka, kamera.kehys.eteen, ruudukko, SARAKKEITA, RIVEJA)
     }
 
     /** The planes the browser itself has detected (WebXR plane detection, where the device offers it). */
@@ -683,10 +806,14 @@ class PeliSivu(private val juuri: HTMLElement) {
         }
 
         /**
-         * Slopes (right, up) of the rays that probe the room in AR: the middle, left, right, up and down
-         * (in that order: [Tunnistin.katse] works out the surface from them) and the four corners between.
+         * Slopes (right, up) of the hit-test rays in AR. Hit tests only find planes the browser already knows,
+         * so one ray straight ahead is enough: it finds the floor. The rest of the room comes from depth.
          */
-        val MITTAUSSUUNNAT = listOf(0.0 to 0.0, -0.12 to 0.0, 0.12 to 0.0, 0.0 to 0.12, 0.0 to -0.12, -0.12 to -0.12, 0.12 to -0.12, -0.12 to 0.12, 0.12 to 0.12)
+        val MITTAUSSUUNNAT = listOf(0.0 to 0.0)
+
+        /** The depth image is sampled into this grid for the recogniser. */
+        const val SARAKKEITA = 40
+        const val RIVEJA = 30
 
         const val KASI_LEPO_Y = -0.72f
         const val KASI_SYVYYS = 0.5f
