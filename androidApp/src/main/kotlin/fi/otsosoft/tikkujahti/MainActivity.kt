@@ -70,6 +70,8 @@ import fi.otsosoft.tikkujahti.peli.Pyyhkaisy
 import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberMaterialLoader
+import io.github.sceneview.ar.createARCameraStream
+import io.github.sceneview.ar.rememberARCameraStream
 import io.github.sceneview.rememberScene
 
 class MainActivity : ComponentActivity() {
@@ -250,6 +252,12 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
 fun PeliNakyma() {
     val engine = rememberEngine()
     val materiaalit = rememberMaterialLoader(engine)
+    // The camera feed is drawn first: the floor's shadow catcher (ShadowReceiverPlane) darkens what is already on
+    // screen, and with the feed drawn last (SceneView's default) it darkened the empty background instead and
+    // showed as a solid plate over the floor
+    val kameravirta = rememberARCameraStream(materiaalit) {
+        createARCameraStream(materiaalit).apply { isOccluderMeshEnabled = true }
+    }
     val scene = rememberScene(engine)
     val muisti = LocalContext.current.getSharedPreferences("tikkujahti", Context.MODE_PRIVATE)
     val tila = remember {
@@ -294,6 +302,7 @@ fun PeliNakyma() {
             engine = engine,
             materialLoader = materiaalit,
             scene = scene,
+            cameraStream = kameravirta,
             planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL,
             // Depth, where the phone has it, lets the game measure surfaces ARCore makes no planes of
             depthMode = Config.DepthMode.AUTOMATIC,
