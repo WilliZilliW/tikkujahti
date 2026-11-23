@@ -106,8 +106,12 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
   alhaalta ylös) kirjaa konsoliin SYVYYSKOE-rivit: suunta opittiin oikein molemmilla, pelkkä lattia piilotti
   0/2 ukkoa, metrin päässä oleva seinä 2/2. Ukot eivät valitse kävelykohdetta tunnetun seinän takaa
   (`Ukko.esteeton`, `Peli.seinaton`).
-- **Android: kamerakuva piirretään ensin** (`isOccluderMeshEnabled = true` MainActivityssä). Muuten lattian
-  varjopinta (`ShadowReceiverPlane`) tummentaa tyhjää taustaa ja näkyy umpinaisena levynä (laitepalaute 23.11.2026).
+- **Android: lattian päälle ilmestyi umpinainen levy** (laitepalaute 23.11.2026, turkoosi ja sitten kultainen:
+  ukkojen värejä). Syy: ukon poistuessa sen värimateriaali tuhottiin, Filament antoi kahvan uudelleen, ja
+  SceneViewin `ShadowReceiverPlane` piirtyi toisen ukon värillä. Nyt ukkojen materiaalit jaetaan värin mukaan
+  eikä niitä tuhota pelin aikana (`Piirtaja.kehoAineet`; **älä tuhoa MaterialInstanceja kesken pelin**),
+  `ShadowReceiverPlane` on poistettu, ja jokaisella ukolla on oma läikkävarjo pinnallaan (`Piirtaja.asetaVarjo`,
+  kolme läpikuultavaa kiekkoa). Kamerakuva piirretään ensin (`isOccluderMeshEnabled = true`).
 - `ukko/Ukko.kt` – aivot ja animaatio, `ukko/Nukke.kt` – ragdoll, `Asento`, `Ulkonako` (mitat, luonne, värit).
   Ukko suosii kävelykohteita pelaajan näkökentässä (`katsojanSuunta`).
 - `mesh/Verkko.kt` – kiinteän topologian verkko osittain (materiaaleittain). `mesh/UkkoVerkko.kt` – ukko:
@@ -186,7 +190,7 @@ ja tarkista, että ajot menivät läpi.
 
 ## Tarkistettava laitteella (ei voi pilvessä)
 - Android: näkyvätkö ukot ja pallot (materiaali `createColorInstance`, TANGENTS-kvaterniot), varjo lattialla
-  (`ShadowReceiverPlane`), ukkojen koko ja paikka, kosketuksen suunta (`displayOrientedPose`), äänet.
+  (oma läikkävarjo), ukkojen koko ja paikka, kosketuksen suunta (`displayOrientedPose`), äänet.
 - WebXR: omistaja on käynnistänyt AR-tilan puhelimella (lattian napautus toimi; se korvattiin sittemmin
   automaattisella haulla, jota ei ole laitteella kokeiltu). Tarkistamatta: osuuko arvattu/löydetty lattia
   kohdalleen, pyyhkäisy dom-overlayn läpi, varjo (`ShadowMaterial`).

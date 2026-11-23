@@ -102,7 +102,7 @@ private class VerkkoPuskurit(private val engine: Engine, private val verkko: Ver
 
 /** Draws the game's figures, balls and effects as Filament renderables added straight to the AR scene. */
 class Piirtaja(private val engine: Engine, private val scene: Scene, private val materiaalit: MaterialLoader) {
-    private class UkkoKuva(val verkko: UkkoVerkko, val puskurit: VerkkoPuskurit, val entiteetti: Int, val omat: List<MaterialInstance>) {
+    private class UkkoKuva(val verkko: UkkoVerkko, val puskurit: VerkkoPuskurit, val entiteetti: Int, val varjo: Int) {
         var haamu = false
     }
 
@@ -155,8 +155,13 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
         val verkko = UkkoVerkko(u.m, tyyppi)
         val puskurit = VerkkoPuskurit(engine, verkko, true)
         // The golden figure gleams
-        val keho = if (tyyppi == Tyyppi.KULTAINEN) materiaalit.createColorInstance(u.ulkonako.vari.compose(), 0.35f, 0.22f, 0.6f) else aine(u.ulkonako.vari, 0.55f)
-        val varuste = aine(Ulkonako.varusteVari(tyyppi), 0.5f)
+        // Colours are kept for the whole game and shared: a material instance destroyed while the game runs
+        // let Filament hand its handle to something else, and SceneView's floor plane once showed up painted
+        // in a caught figure's colour
+        val keho = kehoAineet.getOrPut(u.ulkonako.vari to (tyyppi == Tyyppi.KULTAINEN)) {
+            if (tyyppi == Tyyppi.KULTAINEN) materiaalit.createColorInstance(u.ulkonako.vari.compose(), 0.35f, 0.22f, 0.6f) else aine(u.ulkonako.vari, 0.55f)
+        }
+        val varuste = kehoAineet.getOrPut(Ulkonako.varusteVari(tyyppi) to false) { aine(Ulkonako.varusteVari(tyyppi), 0.5f) }
         val aineet = arrayOf(keho, valkoinen, tumma, suu, kieli, varuste)
         val e = EntityManager.get().create()
         val b = RenderableManager.Builder(verkko.osia).boundingBox(laatikko).culling(false).castShadows(true).receiveShadows(false)
@@ -166,7 +171,75 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
         }
         b.build(engine, e)
         scene.addEntity(e)
-        return UkkoKuva(verkko, puskurit, e, listOf(keho, varuste))
+        return UkkoKuva(verkko, puskurit, e, luoVarjo())
+    }
+
+    private val kehoAineet = HashMap<Pair<Vari, Boolean>, MaterialInstance>()
+
+    // A soft round shadow under each figure: three see-through discs, darker towards the middle
+    private val varjoAine = materiaalit.createUnlitColorInstance(Color(0f, 0f, 0f, 0.16f))
+    private val varjoPisteet: VertexBuffer
+    private val varjoIndeksit: IndexBuffer
+
+    init {
+        val sektoreita = 20
+        val renkaat = floatArrayOf(1f, 0.72f, 0.45f)
+        val paikat = FloatArray(renkaat.size * (sektoreita + 1) * 3)
+        val kolmiot = ShortArray(renkaat.size * sektoreita * 3)
+        var p = 0
+        var k = 0
+        for ((r, sade) in renkaat.withIndex()) {
+            val keski = r * (sektoreita + 1)
+            paikat[p++] = 0f; paikat[p++] = r * 0.0005f; paikat[p++] = 0f
+            for (i in 0 until sektoreita) {
+                val a = i * 2.0 * Math.PI / sektoreita
+                paikat[p++] = (cos(a) * sade).toFloat(); paikat[p++] = r * 0.0005f; paikat[p++] = (sin(a) * sade).toFloat()
+            }
+            for (i in 0 until sektoreita) {
+                kolmiot[k++] = keski.toShort(); kolmiot[k++] = (keski + 1 + (i + 1) % sektoreita).toShort(); kolmiot[k++] = (keski + 1 + i).toShort()
+            }
+        }
+        varjoPisteet = VertexBuffer.Builder().vertexCount(paikat.size / 3).bufferCount(1)
+            .attribute(VertexBuffer.VertexAttribute.POSITION, 0, VertexBuffer.AttributeType.FLOAT3, 0, 12)
+            .build(engine)
+        varjoPisteet.setBufferAt(engine, 0, floatPuskuri(paikat.size).apply { put(paikat); flip() })
+        varjoIndeksit = IndexBuffer.Builder().indexCount(kolmiot.size).bufferType(IndexBuffer.Builder.IndexType.USHORT).build(engine)
+        val ind = ByteBuffer.allocateDirect(kolmiot.size * 2).order(ByteOrder.nativeOrder()).asShortBuffer()
+        ind.put(kolmiot); ind.flip()
+        varjoIndeksit.setBuffer(engine, ind)
+    }
+
+    private fun luoVarjo(): Int {
+        val e = EntityManager.get().create()
+        RenderableManager.Builder(1).boundingBox(Box(0f, 0f, 0f, 1f, 0.01f, 1f)).culling(false).castShadows(false).receiveShadows(false)
+            .geometry(0, RenderableManager.PrimitiveType.TRIANGLES, varjoPisteet, varjoIndeksit)
+            .material(0, varjoAine)
+            .build(engine, e)
+        engine.transformManager.create(e)
+        scene.addEntity(e)
+        return e
+    }
+
+    /** Lays the shadow on the surface the figure stands on, under its hips, smaller the higher it is. */
+    private fun asetaVarjo(k: UkkoKuva, u: Ukko, nakyy: Boolean) {
+        val pinta = u.lattia
+        val lantio = u.asento[fi.otsosoft.tikkujahti.ukko.Nivel.LANTIO]
+        if (!nakyy || pinta == null || u.asento.haamu) {
+            nayta(k.varjo, false)
+            return
+        }
+        val n = pinta.normaali
+        val korkeus = pinta.etaisyys(lantio)
+        val kohta = lantio - n * korkeus + n * 0.004f
+        val koko = u.m.lantioSeisten * 0.75f * (1f - (korkeus / (u.m.pituus * 3f)).coerceIn(0f, 0.7f))
+        if (korkeus < -0.05f || korkeus > u.m.pituus * 3f) {
+            nayta(k.varjo, false)
+            return
+        }
+        nayta(k.varjo, true)
+        val x = pinta.u
+        val z = x cross n
+        asetaPallo(k.varjo, kohta, koko, x, n, z)
     }
 
     /** An invisible figure shows only its face: the body and what it carries are drawn with no triangles. */
@@ -225,6 +298,7 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
             val k = ukot.getOrPut(u) { luoUkko(u) }
             // Behind something real (Peli.paivitaPeitot): not drawn
             nayta(k.entiteetti, u.asento.nakyvissa && !u.peitossa)
+            asetaVarjo(k, u, u.asento.nakyvissa && !u.peitossa)
             if (u.asento.nakyvissa) {
                 asetaHaamu(k, u.asento.haamu)
                 k.verkko.paivita(u.asento)
@@ -238,7 +312,7 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
             if (e.key !in peli.ukot) {
                 poista(e.value.entiteetti)
                 e.value.puskurit.tuhoa()
-                e.value.omat.forEach { engine.destroyMaterialInstance(it) }
+                poista(e.value.varjo)
                 ukkoIt.remove()
             }
         }
@@ -292,7 +366,7 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
     /** Frees everything. Call before the engine is destroyed. */
     fun tuhoa() {
         for (k in ukot.values) {
-            poista(k.entiteetti); k.puskurit.tuhoa(); k.omat.forEach { engine.destroyMaterialInstance(it) }
+            poista(k.entiteetti); poista(k.varjo); k.puskurit.tuhoa()
         }
         ukot.clear()
         for (e in pallot.values + tehosteet.values + aarteet.values.flatMap { listOf(it.first, it.second) }) poista(e)
@@ -300,6 +374,9 @@ class Piirtaja(private val engine: Engine, private val scene: Scene, private val
         poista(kasiPallo)
         palloPuskurit.tuhoa()
 
-        for (m in listOf(valkoinen, tumma, suu, kieli) + hehkut.values + palloAineet.values.flatMap { listOf(it.first, it.second) }) engine.destroyMaterialInstance(m)
+        engine.destroyVertexBuffer(varjoPisteet)
+        engine.destroyIndexBuffer(varjoIndeksit)
+        for (m in listOf(valkoinen, tumma, suu, kieli, varjoAine) + kehoAineet.values + hehkut.values + palloAineet.values.flatMap { listOf(it.first, it.second) }) engine.destroyMaterialInstance(m)
+        kehoAineet.clear()
     }
 }

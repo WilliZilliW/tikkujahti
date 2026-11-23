@@ -252,9 +252,7 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
 fun PeliNakyma() {
     val engine = rememberEngine()
     val materiaalit = rememberMaterialLoader(engine)
-    // The camera feed is drawn first: the floor's shadow catcher (ShadowReceiverPlane) darkens what is already on
-    // screen, and with the feed drawn last (SceneView's default) it darkened the empty background instead and
-    // showed as a solid plate over the floor
+    // The camera feed is drawn first, so transparent things (the figures' shadows) blend over the real room
     val kameravirta = rememberARCameraStream(materiaalit) {
         createARCameraStream(materiaalit).apply { isOccluderMeshEnabled = true }
     }
@@ -323,10 +321,7 @@ fun PeliNakyma() {
                 heitot = tila.peli.heitot
             },
             onTouchEvent = { e, _ -> if (albumiAuki) false else tila.kosketus(e, koko) },
-        ) {
-            // The real floor catches the figures' shadows
-            lattia?.let { ShadowReceiverPlane(plane = it) }
-        }
+        )
 
         Box(Modifier.fillMaxSize().safeDrawingPadding().padding(12.dp)) {
             Row(
