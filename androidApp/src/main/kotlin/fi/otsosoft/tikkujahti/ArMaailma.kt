@@ -67,7 +67,7 @@ object ArMaailma {
      * the rays hit. Only the positions are used: the recogniser works out which way the surface faces from
      * the points themselves, so a wrong orientation on a single hit cannot mislead it.
      */
-    fun mittaa(frame: Frame, leveys: Int, korkeus: Int, kamera: V3, tunnistin: Tunnistin) {
+    fun mittaa(frame: Frame, leveys: Int, korkeus: Int, kamera: Kamera, dt: Float, tunnistin: Tunnistin) {
         val p = arrayOfNulls<V3>(9)
         for (iy in 0..2) for (ix in 0..2) {
             val osuma = try {
@@ -79,7 +79,7 @@ object ArMaailma {
             p[iy * 3 + ix] = V3(pose.tx(), pose.ty(), pose.tz())
         }
         // Middle, left, right, up (smaller y on screen), down, then the corners
-        tunnistin.katse(kamera, p[4], p[3], p[5], p[1], p[7], listOf(p[0], p[2], p[6], p[8]))
+        tunnistin.katse(kamera.paikka, kamera.kehys.eteen, dt, p[4], p[3], p[5], p[1], p[7], listOf(p[0], p[2], p[6], p[8]))
     }
 
     /**

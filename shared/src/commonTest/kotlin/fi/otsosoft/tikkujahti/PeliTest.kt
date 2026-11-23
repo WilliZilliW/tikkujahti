@@ -624,8 +624,9 @@ class PeliTest {
     fun katseLaskeePinnanSuunnanItse() {
         val kam = V3(0f, 1.4f, 0f)
         // A fan of points on a plane through p0 spanned by a and b
-        fun viuhka(t: Tunnistin, p0: V3, a: V3, b: V3, kamera: V3 = kam) = t.katse(
-            kamera, p0, p0 - a, p0 + a, p0 + b, p0 - b, listOf(p0 - a - b, p0 + a - b, p0 - a + b, p0 + a + b),
+        // (each look on a fresh recogniser's clock is far apart in time, so turning between looks is slow)
+        fun viuhka(t: Tunnistin, p0: V3, a: V3, b: V3, kamera: V3 = kam, eteen: V3 = p0 - kamera, aika: Float = 10f) = t.katse(
+            kamera, eteen, aika, p0, p0 - a, p0 + a, p0 + b, p0 - b, listOf(p0 - a - b, p0 + a - b, p0 - a + b, p0 + a + b),
         )
         val t = Tunnistin()
         val rnd = kotlin.random.Random(3)
@@ -646,8 +647,8 @@ class PeliTest {
         // A fan across a corner is not flat: nothing comes of it
         val t2 = Tunnistin()
         repeat(40) {
-            assertNull(t2.katse(kam, V3(0f, 1f, -2f), V3(-0.2f, 1f, -2f), V3(0.2f, 1f, -1.7f), V3(0f, 1.2f, -2f), V3(0f, 0.8f, -2f)))
-            assertNull(t2.katse(kam, V3(0f, 1f, -2f), null, V3(0.2f, 1f, -2f), V3(0f, 1.2f, -2f), V3(0f, 0.8f, -2f)))
+            assertNull(t2.katse(kam, V3(0f, -0.4f, -2f), 10f, V3(0f, 1f, -2f), V3(-0.2f, 1f, -2f), V3(0.2f, 1f, -1.7f), V3(0f, 1.2f, -2f), V3(0f, 0.8f, -2f)))
+            assertNull(t2.katse(kam, V3(0f, -0.4f, -2f), 10f, V3(0f, 1f, -2f), null, V3(0.2f, 1f, -2f), V3(0f, 1.2f, -2f), V3(0f, 0.8f, -2f)))
         }
         assertTrue(t2.pinnat(0f).isEmpty())
 
@@ -658,6 +659,25 @@ class PeliTest {
         assertNull(viuhka(t3, V3(0f, 1.1f, 0f), V3.X * 0.15f, V3.Z * 0.15f, kam + V3(0.6f, 0f, 0f)))
         repeat(60) { viuhka(t3, V3(0f, 2.5f, 0f), V3.X * 0.15f, V3.Z * 0.15f, kam + V3(0.6f, 0f, 0f)) }
         assertTrue(t3.pinnat(0f).none { it.laji == PinnanLaji.POYTA })
+
+        // The phone's attitude: a look taken while swinging round fast, one that does not land where the camera
+        // points, and a surface seen at a glancing angle are all left out
+        val t4 = Tunnistin()
+        val lattiaP = V3(0f, 0f, -1f)
+        assertNotNull(viuhka(t4, lattiaP, V3.X * 0.15f, V3.Z * 0.15f, aika = 1f / 60f))
+        assertNull(viuhka(t4, V3(0f, 2.5f, 0.2f), V3.X * 0.15f, V3.Z * 0.15f, aika = 1f / 60f), "nopea heilautus kelpasi")
+        assertNotNull(viuhka(t4, V3(0f, 2.5f, 0.2f), V3.X * 0.15f, V3.Z * 0.15f, aika = 1f / 60f), "paikallaan pysyvä katse ei kelvannut")
+        assertNull(viuhka(t4, lattiaP, V3.X * 0.15f, V3.Z * 0.15f, eteen = V3(1f, -1.4f, -1f)), "osuma sivussa katseesta kelpasi")
+        assertNull(viuhka(t4, V3(0f, 0f, -9f), V3.X * 0.15f, V3.Z * 0.15f), "viisto katse lattiaan kelpasi")
+
+        // A drifting ceiling stays one ceiling
+        val t5 = Tunnistin()
+        val rnd5 = kotlin.random.Random(8)
+        repeat(120) {
+            val ryominta = (it / 40) * 0.15f // tracking slips 15 cm at a time while looking up
+            viuhka(t5, V3(rnd5.nextFloat() * 2f - 1f, 2.5f + ryominta, rnd5.nextFloat() * 2f - 1f), V3.X * 0.15f, V3.Z * 0.15f)
+        }
+        assertEquals(1, t5.pinnat(0f).count { it.laji == PinnanLaji.KATTO }, "kattoja syntyi useita päällekkäin")
 
         // A platform's own plane is turned to face the camera: a ceiling whose normal is given as "up" hangs down
         val katto = assertNotNull(Tunnistin.tasosta("k", V3(0f, 2.5f, 0f), V3.X, V3.Y, listOf(-1f to -1f, 1f to -1f, 1f to 2f, -1f to 2f), kam, 0f))

@@ -126,7 +126,6 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         private set
     private val haku = LattianHaku()
     private val tunnistin = Tunnistin()
-    private var mittausAjastin = 0f
     private var varjoAjastin = 0f
     private var aika = 0f
     private val varjot = ArrayList<Pair<V3, Float>>()
@@ -146,11 +145,8 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         val arvaus = if (lattiataso == null) haku.lattia(kamera.paikka) else null
         val lattiaY = lattiataso?.centerPose?.ty() ?: arvaus?.keskus?.y
         // The room is probed all the time, beyond the planes ARCore finds by itself
-        mittausAjastin -= dt
-        if (mittausAjastin <= 0f && koko.width > 0) {
-            mittausAjastin = 0.15f
-            ArMaailma.mittaa(frame, koko.width, koko.height, kamera.paikka, tunnistin)
-        }
+        // (every frame: the recogniser also watches how fast the phone turns and moves between looks)
+        if (koko.width > 0) ArMaailma.mittaa(frame, koko.width, koko.height, kamera, dt, tunnistin)
         val kaikki = ArrayList(pinnat)
         if (arvaus != null) kaikki += arvaus
         for (t in tunnistin.pinnat(lattiaY)) {

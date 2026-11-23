@@ -72,7 +72,11 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
   pöytä), hylkää epätasaiset viuhkat (reunat, nurkat) ja kaiken hetkeksi kameran paikan hypähdettyä
   (seuranta hukassa; selaimessa myös `emulatedPosition`). Pinta vaatii 6 mittausta. Alustan omat tasot
   käännetään samoin (`Tunnistin.tasosta`, Androidin `ArMaailma.pinta`). Lattia siirtyy alemmas vasta, kun
-  alempi pinta on nähty 8 kertaa samalla korkeudella (`LattianHaku.VAHVISTUS`). Jos tunnistus sekoilee yhä,
+  alempi pinta on nähty 8 kertaa samalla korkeudella (`LattianHaku.VAHVISTUS`). Puhelimen asento ja liike
+  ovat mukana (omistajan ehdotus): `katse` saa kameran suunnan ja `dt`:n ja hylkää mittauksen, jos puhelin
+  kääntyy yli 2,2 rad/s tai liikkuu yli 1,6 m/s, jos osuma ei ole katseen suunnassa, tai jos pinta nähdään
+  liian viistosti (`VIISTO`). Lähekkäiset kattomittaukset yhdistetään yhteen kattoon (`KATON_VARA` 0,45 m),
+  koska kattoa katsoessa paikannus ryömii. Jos tunnistus sekoilee yhä,
   seuraavat epäillyt: seurannan ryömintä (pinnat eivät vanhene eivätkä siirry), samaan tasoon osuvat eri
   pinnat (`PAKSUUS` 7 cm) ja ääriviivojen uudelleenpiirto 0,4 s välein.
 - `ukko/Ukko.kt` – aivot ja animaatio, `ukko/Nukke.kt` – ragdoll, `Asento`, `Ulkonako` (mitat, luonne, värit).

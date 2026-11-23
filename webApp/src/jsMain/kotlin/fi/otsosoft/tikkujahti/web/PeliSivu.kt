@@ -475,7 +475,7 @@ class PeliSivu(private val juuri: HTMLElement) {
         }
         // (while the phone has lost its place, nothing it sees is used)
         if (seuranta) {
-            val katse = tunnistin.katse(kamera.paikka, osumat[0], osumat[1], osumat[2], osumat[3], osumat[4], osumat.drop(5))
+            val katse = tunnistin.katse(kamera.paikka, kamera.kehys.eteen, dt, osumat[0], osumat[1], osumat[2], osumat[3], osumat[4], osumat.drop(5))
             if (katse != null && katse.second.y > 0.9f) havaittu = katse.first.y
         }
         haku.ruutu(dt, kamera.paikka, havaittu)

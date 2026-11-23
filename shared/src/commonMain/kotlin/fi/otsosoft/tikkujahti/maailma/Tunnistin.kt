@@ -1,6 +1,7 @@
 package fi.otsosoft.tikkujahti.maailma
 
 import fi.otsosoft.tikkujahti.matikka.V3
+import fi.otsosoft.tikkujahti.matikka.kulmaValilla
 import kotlin.math.abs
 
 /**
@@ -25,6 +26,7 @@ class Tunnistin {
     private var seuraava = 1
 
     private var edKamera: V3? = null
+    private var edEteen: V3? = null
     private var hylkaa = 0
 
     /**
@@ -37,14 +39,28 @@ class Tunnistin {
      * surface's normal (towards the camera) are returned. A fan that falls across an edge or a corner is
      * left out, and so is everything for a moment after the camera's position jumps (tracking lost, as
      * happens when the phone is pointed at a bare ceiling).
+     *
+     * The phone's own attitude is used as well: [eteen] is where the camera points and [dt] the seconds since
+     * the last look. A look taken while the phone swings or moves fast is blurred and left out; so is a hit
+     * that is not where the camera points (the tracking has slipped), and a surface seen at a glancing angle,
+     * which no phone measures well.
      */
-    fun katse(kamera: V3, keski: V3?, vasen: V3?, oikea: V3?, ylos: V3?, alas: V3?, muut: List<V3?> = emptyList()): Pair<V3, V3>? {
+    fun katse(kamera: V3, eteen: V3, dt: Float, keski: V3?, vasen: V3?, oikea: V3?, ylos: V3?, alas: V3?, muut: List<V3?> = emptyList()): Pair<V3, V3>? {
         val ed = edKamera
+        val edE = edEteen
         edKamera = kamera
+        edEteen = eteen
         if (ed != null && (kamera - ed).pituus > HYPPY) hylkaa = 45
         if (hylkaa > 0) {
             hylkaa--
             return null
+        }
+        if (ed != null && edE != null && dt > 1e-4f) {
+            if (kulmaValilla(eteen.suunta(), edE.suunta()) / dt > KAANTO || (kamera - ed).pituus / dt > VAUHTI) return null
+        }
+        if (keski != null) {
+            val sade = (keski - kamera).suunta()
+            if (kulmaValilla(sade, eteen.suunta()) > 0.2f) return null
         }
         if (keski == null || vasen == null || oikea == null || ylos == null || alas == null) return null
         val leveys = (oikea - vasen).pituus
@@ -53,6 +69,7 @@ class Tunnistin {
         var n = ((oikea - vasen) cross (ylos - alas)).suunta(V3.NOLLA)
         if (n == V3.NOLLA) return null
         if ((n dot (kamera - keski)) < 0f) n = -n // a surface that is seen faces the one who sees it
+        if ((n dot (kamera - keski).suunta()) < VIISTO) return null
         // Flat? Every point has to lie on the plane through the middle one, within what the measuring allows
         val vara = 0.025f + 0.02f * (keski - kamera).pituus
         val kaikki = listOf(vasen, oikea, ylos, alas) + muut.filterNotNull()
@@ -71,6 +88,16 @@ class Tunnistin {
             n0.y < -0.85f -> -V3.Y
             abs(n0.y) < 0.35f -> n0.vaakaan().suunta()
             else -> return
+        }
+        // A room has one ceiling. Looking up is when tracking drifts most, so ceiling measurements that land a
+        // little above or below the ceiling already known are taken to be that same ceiling, not a new one.
+        var p = p
+        if (n.y < 0f) {
+            val katto = tasot.firstOrNull { t -> t.n.y < 0f && abs(t.keskus.y - p.y) < KATON_VARA && t.pisteet.any { q -> (q - p).vaakaan().pituus < 3.5f } }
+            if (katto != null) {
+                katto.keskus += V3.Y * ((p.y - katto.keskus.y) * 0.03f)
+                p = V3(p.x, katto.keskus.y, p.z)
+            }
         }
         var paras: Taso? = null
         val it = tasot.iterator()
@@ -160,6 +187,13 @@ class Tunnistin {
         const val VAHINTAAN = 6
         /** A camera that moves further than this between two frames has lost its place, metres. */
         const val HYPPY = 0.25f
+        /** Faster turning (rad/s) or moving (m/s) than this blurs what the camera sees. */
+        const val KAANTO = 2.2f
+        const val VAUHTI = 1.6f
+        /** Cosine of the steepest angle a surface may be seen at and still be measured (about 72° off straight on). */
+        const val VIISTO = 0.3f
+        /** Ceiling measurements within this of the known ceiling's height are that ceiling, metres. */
+        const val KATON_VARA = 0.45f
 
         /**
          * A plane the platform itself has detected, as a [Pinta], or null if it is the floor or of no use.
