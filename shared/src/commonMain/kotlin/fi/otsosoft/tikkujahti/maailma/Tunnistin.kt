@@ -24,6 +24,44 @@ class Tunnistin {
     private val tasot = ArrayList<Taso>()
     private var seuraava = 1
 
+    private var edKamera: V3? = null
+    private var hylkaa = 0
+
+    /**
+     * One look at the room: where a small fan of rays from the camera hit — straight ahead ([keski]), a little
+     * to each side and above and below, plus any [muut] around them. Null means that ray hit nothing.
+     *
+     * The direction a surface faces is worked out here from the points themselves, never taken from what the
+     * platform reports: for single points the platforms often just say "up", which turned ceilings and walls
+     * into tables. If the points lie flat they are added as measurements, and the middle point and the
+     * surface's normal (towards the camera) are returned. A fan that falls across an edge or a corner is
+     * left out, and so is everything for a moment after the camera's position jumps (tracking lost, as
+     * happens when the phone is pointed at a bare ceiling).
+     */
+    fun katse(kamera: V3, keski: V3?, vasen: V3?, oikea: V3?, ylos: V3?, alas: V3?, muut: List<V3?> = emptyList()): Pair<V3, V3>? {
+        val ed = edKamera
+        edKamera = kamera
+        if (ed != null && (kamera - ed).pituus > HYPPY) hylkaa = 45
+        if (hylkaa > 0) {
+            hylkaa--
+            return null
+        }
+        if (keski == null || vasen == null || oikea == null || ylos == null || alas == null) return null
+        val leveys = (oikea - vasen).pituus
+        val korkeus = (ylos - alas).pituus
+        if (leveys < 0.04f || korkeus < 0.04f || leveys > 3f || korkeus > 3f) return null
+        var n = ((oikea - vasen) cross (ylos - alas)).suunta(V3.NOLLA)
+        if (n == V3.NOLLA) return null
+        if ((n dot (kamera - keski)) < 0f) n = -n // a surface that is seen faces the one who sees it
+        // Flat? Every point has to lie on the plane through the middle one, within what the measuring allows
+        val vara = 0.025f + 0.02f * (keski - kamera).pituus
+        val kaikki = listOf(vasen, oikea, ylos, alas) + muut.filterNotNull()
+        if (kaikki.any { kotlin.math.abs((it - keski) dot n) > vara }) return null
+        nayte(keski, n)
+        for (p in kaikki) nayte(p, n)
+        return keski to n
+    }
+
     /** A measured point [p] on a surface whose normal there is [normaali]. */
     fun nayte(p: V3, normaali: V3) {
         // Only level and upright surfaces: snap the normal, drop anything in between
@@ -88,7 +126,7 @@ class Tunnistin {
     }
 
     private fun rakenna(t: Taso, lattiaY: Float?): Pinta? {
-        if (t.pisteet.size < 3) return null
+        if (t.pisteet.size < VAHINTAAN) return null
         val laji = luokittele(t.n, t.keskus.y, lattiaY) ?: return null
         val pisteet = ArrayList(t.pisteet)
         // A wall seen low enough is taken to reach the floor: that is where climbers get onto it
@@ -118,15 +156,34 @@ class Tunnistin {
         const val TIHEYS = 0.06f
         const val VARA = 0.06f
         const val VAHIMMAISALA = 0.05f
+        /** Measurements a surface needs before it counts: one stray patch is not a table. */
+        const val VAHINTAAN = 6
+        /** A camera that moves further than this between two frames has lost its place, metres. */
+        const val HYPPY = 0.25f
+
+        /**
+         * A plane the platform itself has detected, as a [Pinta], or null if it is the floor or of no use.
+         * The platform gives the plane's own frame — [x] and [normaali] axes at [keskus] — and its outline as
+         * (x, z) pairs in that frame. The normal is turned to face [kamera] first: platforms do not agree on
+         * which way a ceiling's normal points.
+         */
+        fun tasosta(id: String, keskus: V3, x: V3, normaali: V3, reunaXZ: List<Pair<Float, Float>>, kamera: V3, lattiaY: Float?): Pinta? {
+            val kaannetty = (normaali dot (kamera - keskus)) < 0f
+            val n = if (kaannetty) -normaali else normaali
+            val laji = luokittele(n.suunta(), keskus.y, lattiaY) ?: return null
+            // Pinta's second axis is normal × x: that is -z of the plane's frame, or +z once the normal is turned
+            return Pinta(id, laji, keskus, n, x, reunaXZ.map { (a, z) -> a to (if (kaannetty) z else -z) })
+        }
 
         /** What a surface facing [n] at height [y] is, or null if it is the floor itself or of no use. */
         fun luokittele(n: V3, y: Float, lattiaY: Float?): PinnanLaji? = when {
             n.y > 0.85f -> when {
                 lattiaY == null -> null
-                y > lattiaY + 0.12f -> PinnanLaji.POYTA
-                else -> null // the floor (or something below it: noise)
+                y > lattiaY + 0.12f && y < lattiaY + 2.3f -> PinnanLaji.POYTA
+                else -> null // the floor (or something below it or absurdly high: noise)
             }
-            n.y < -0.85f -> PinnanLaji.KATTO
+            // What faces down low in the room is the underside of something, not a ceiling to hang from
+            n.y < -0.85f -> if (lattiaY == null || y > lattiaY + 1.7f) PinnanLaji.KATTO else null
             abs(n.y) < 0.35f -> PinnanLaji.SEINA
             else -> null
         }

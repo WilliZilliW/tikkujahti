@@ -2,9 +2,7 @@ package fi.otsosoft.tikkujahti
 
 import com.google.ar.core.Camera
 import com.google.ar.core.Coordinates2d
-import com.google.ar.core.DepthPoint
 import com.google.ar.core.Frame
-import com.google.ar.core.Point
 import fi.otsosoft.tikkujahti.maailma.Tunnistin
 import com.google.ar.core.Plane
 import com.google.ar.core.Session
@@ -25,7 +23,7 @@ object ArMaailma {
      * so a table does not become the floor just because it was seen first. Returns the surfaces and the
      * ARCore plane chosen as the floor (or null while none is big enough).
      */
-    fun pinnat(session: Session): Pair<List<Pinta>, Plane?> {
+    fun pinnat(session: Session, kamera: V3): Pair<List<Pinta>, Plane?> {
         val tasot = session.getAllTrackables(Plane::class.java).filter {
             it.trackingState == TrackingState.TRACKING && it.subsumedBy == null && it.polygon.remaining() >= 6
         }
@@ -39,47 +37,49 @@ object ArMaailma {
                 t.type == Plane.Type.HORIZONTAL_DOWNWARD_FACING -> PinnanLaji.KATTO
                 else -> PinnanLaji.SEINA
             }
-            pinta("taso${t.hashCode()}", laji, t) // the same name every frame, so figures stay on their surface
+            pinta("taso${t.hashCode()}", laji, t, kamera) // the same name every frame, so figures stay on their surface
         }
         return pinnat to lattia
     }
 
     private fun ala(t: Plane) = t.extentX * t.extentZ
 
-    private fun pinta(id: String, laji: PinnanLaji, t: Plane): Pinta {
+    private fun pinta(id: String, laji: PinnanLaji, t: Plane, kamera: V3): Pinta {
         val pose = t.centerPose
         val x = pose.xAxis
-        val y = pose.yAxis // the plane's normal
+        var y = pose.yAxis // the plane's normal
+        // A surface that is seen faces the one who sees it: turn the normal if ARCore gives it the other way
+        val kaannetty = y[0] * (kamera.x - pose.tx()) + y[1] * (kamera.y - pose.ty()) + y[2] * (kamera.z - pose.tz()) < 0f
+        if (kaannetty) y = floatArrayOf(-y[0], -y[1], -y[2])
         // The polygon is (x, z) pairs in the plane's own frame. Pinta's second axis is normal × u = -z.
         val p = t.polygon
         val reuna = ArrayList<Pair<Float, Float>>(p.remaining() / 2)
         var i = p.position()
         while (i + 1 < p.limit()) {
-            reuna += p.get(i) to -p.get(i + 1)
+            reuna += p.get(i) to (if (kaannetty) p.get(i + 1) else -p.get(i + 1))
             i += 2
         }
         return Pinta(id, laji, V3(pose.tx(), pose.ty(), pose.tz()), V3(y[0], y[1], y[2]), V3(x[0], x[1], x[2]), reuna)
     }
 
     /**
-     * Probes the room through a grid of points on the screen and feeds the recogniser what the rays hit:
-     * depth points and feature points with a known surface direction. ARCore's own planes are left out, as
-     * they are surfaces already. This finds shelves, sofas and other things the plane finder passes over.
+     * Probes the room through a 3×3 grid of points in the middle of the screen and hands the recogniser where
+     * the rays hit. Only the positions are used: the recogniser works out which way the surface faces from
+     * the points themselves, so a wrong orientation on a single hit cannot mislead it.
      */
-    fun mittaa(frame: Frame, leveys: Int, korkeus: Int, tunnistin: Tunnistin) {
-        for (ix in 1..3) for (iy in 1..3) {
+    fun mittaa(frame: Frame, leveys: Int, korkeus: Int, kamera: V3, tunnistin: Tunnistin) {
+        val p = arrayOfNulls<V3>(9)
+        for (iy in 0..2) for (ix in 0..2) {
             val osuma = try {
-                frame.hitTest(leveys * ix / 4f, korkeus * iy / 4f).firstOrNull()
+                frame.hitTest(leveys * (0.5f + (ix - 1) * 0.1f), korkeus * (0.5f + (iy - 1) * 0.07f)).firstOrNull()
             } catch (e: Exception) {
                 null
             } ?: continue
-            val t = osuma.trackable
-            val kelpaa = t is DepthPoint || (t is Point && t.orientationMode == Point.OrientationMode.ESTIMATED_SURFACE_NORMAL)
-            if (!kelpaa) continue
             val pose = osuma.hitPose
-            val n = pose.yAxis
-            tunnistin.nayte(V3(pose.tx(), pose.ty(), pose.tz()), V3(n[0], n[1], n[2]))
+            p[iy * 3 + ix] = V3(pose.tx(), pose.ty(), pose.tz())
         }
+        // Middle, left, right, up (smaller y on screen), down, then the corners
+        tunnistin.katse(kamera, p[4], p[3], p[5], p[1], p[7], listOf(p[0], p[2], p[6], p[8]))
     }
 
     /**

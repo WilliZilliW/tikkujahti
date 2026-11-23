@@ -23,6 +23,8 @@ class LattianHaku {
     var arvattu = false
         private set
     private var aika = 0f
+    private var ehdokas: Float? = null
+    private var ehdokkaita = 0
     private var keskus = V3.NOLLA
     private var pinta: Pinta? = null
 
@@ -36,7 +38,20 @@ class LattianHaku {
                     y = havaittuY
                     arvattu = false
                 }
-                havaittuY < nyt - 0.2f -> if (alla < 2.5f) y = havaittuY
+                // Clearly lower: the real floor, if it keeps being seen there (one odd measurement moves nothing)
+                havaittuY < nyt - 0.2f -> if (alla < 2.5f) {
+                    val e = ehdokas
+                    if (e != null && abs(e - havaittuY) < 0.06f) {
+                        ehdokas = lerp(e, havaittuY, 0.2f)
+                        if (++ehdokkaita >= VAHVISTUS) {
+                            y = ehdokas
+                            ehdokas = null
+                        }
+                    } else {
+                        ehdokas = havaittuY
+                        ehdokkaita = 1
+                    }
+                }
                 abs(havaittuY - nyt) < 0.2f -> y = lerp(nyt, havaittuY, 0.1f) // the same floor, measured better
             }
         }
@@ -67,6 +82,8 @@ class LattianHaku {
         const val OLETUSKORKEUS = 1.25f
         /** A surface nearer than this below the phone is taken for a table, not the floor. */
         const val VAHIMMAISKORKEUS = 0.45f
+        /** How many times a lower floor has to be seen at the same height before the floor moves there. */
+        const val VAHVISTUS = 8
         /** Wide enough that figures a few rooms' corners away still have floor under them. */
         const val SADE = 7.0
     }

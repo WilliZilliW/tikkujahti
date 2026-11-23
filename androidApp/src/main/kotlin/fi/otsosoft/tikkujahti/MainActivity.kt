@@ -139,7 +139,7 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         edellinen = nyt
         seuranta = ArMaailma.kamera(frame.camera, kamera)
         if (!seuranta || dt <= 0f) return
-        val (pinnat, lattiataso) = ArMaailma.pinnat(session)
+        val (pinnat, lattiataso) = ArMaailma.pinnat(session, kamera.paikka)
         lattia = lattiataso
         // Until ARCore has found the floor, play on a guessed one, so that figures turn up without a wait
         haku.ruutu(dt, kamera.paikka, null)
@@ -149,7 +149,7 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         mittausAjastin -= dt
         if (mittausAjastin <= 0f && koko.width > 0) {
             mittausAjastin = 0.15f
-            ArMaailma.mittaa(frame, koko.width, koko.height, tunnistin)
+            ArMaailma.mittaa(frame, koko.width, koko.height, kamera.paikka, tunnistin)
         }
         val kaikki = ArrayList(pinnat)
         if (arvaus != null) kaikki += arvaus

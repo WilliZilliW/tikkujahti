@@ -65,7 +65,16 @@ kääntyvät, mutta kaikki laitteella näkyvä on tarkistamatta (ks. "Tarkistett
   kamerakuvan kirkkaudesta (`ArMaailma.varjot` → `Maailma.varjot`); selaimessa niitä ei ole. Peli käyttää
   paikkoja: erikoispallot päätyvät niihin (`paivitaAarteet`), ujot ukot ja piiloukot hakeutuvat niihin
   (`Peli.piilota`), ja AR:ssä uusista löydöistä kerrotaan pelaajalle (`ilmoitaLoydot`). Selaimen AR piirtää
-  tunnistettujen pintojen ääriviivat. **Mitään tästä ei ole ajettu laitteella.**
+  tunnistettujen pintojen ääriviivat.
+  **Laitepalaute 23.11.2026: tunnistus meni sekaisin, varsinkin kun puhelinta osoitti välillä kattoon.**
+  Korjattu (laitteella vahvistamatta): pinnan suuntaa ei enää uskota alustalta, vaan `Tunnistin.katse` laskee
+  sen 3×3-viuhkan osumapisteistä itse, kääntää normaalin kohti kameraa (ylhäällä oleva vaakapinta on katto, ei
+  pöytä), hylkää epätasaiset viuhkat (reunat, nurkat) ja kaiken hetkeksi kameran paikan hypähdettyä
+  (seuranta hukassa; selaimessa myös `emulatedPosition`). Pinta vaatii 6 mittausta. Alustan omat tasot
+  käännetään samoin (`Tunnistin.tasosta`, Androidin `ArMaailma.pinta`). Lattia siirtyy alemmas vasta, kun
+  alempi pinta on nähty 8 kertaa samalla korkeudella (`LattianHaku.VAHVISTUS`). Jos tunnistus sekoilee yhä,
+  seuraavat epäillyt: seurannan ryömintä (pinnat eivät vanhene eivätkä siirry), samaan tasoon osuvat eri
+  pinnat (`PAKSUUS` 7 cm) ja ääriviivojen uudelleenpiirto 0,4 s välein.
 - `ukko/Ukko.kt` – aivot ja animaatio, `ukko/Nukke.kt` – ragdoll, `Asento`, `Ulkonako` (mitat, luonne, värit).
   Ukko suosii kävelykohteita pelaajan näkökentässä (`katsojanSuunta`).
 - `mesh/Verkko.kt` – kiinteän topologian verkko osittain (materiaaleittain). `mesh/UkkoVerkko.kt` – ukko:

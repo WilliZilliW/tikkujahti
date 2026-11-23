@@ -557,8 +557,12 @@ class PeliTest {
         assertTrue(!h.arvattu)
         assertEquals(-0.9f, h.y!!, 1e-4f)
         // A clearly lower surface seen later is the real floor
+        // …but only once it has been seen there several times: one stray measurement moves nothing
         h.ruutu(dt, kam, -1.3f)
-        assertEquals(-1.3f, h.y!!, 1e-4f)
+        assertEquals(-0.9f, h.y!!, 1e-4f)
+        h.ruutu(dt, kam, -1.9f)
+        repeat(LattianHaku.VAHVISTUS) { h.ruutu(dt, kam, -1.3f) }
+        assertEquals(-1.3f, h.y!!, 0.01f)
         // The disc follows the player, but is not rebuilt for nothing
         val a = assertNotNull(h.lattia(kam))
         assertTrue(a === h.lattia(kam + V3(0.5f, 0f, 0f)))
@@ -614,6 +618,56 @@ class PeliTest {
         // The browser room has its corners too
         m.asetaPinnat(Huone.pinnat())
         assertTrue(Paikat.etsi(m, emptyList()).count { it.laji == PaikanLaji.NURKKA } >= 4)
+    }
+
+    @Test
+    fun katseLaskeePinnanSuunnanItse() {
+        val kam = V3(0f, 1.4f, 0f)
+        // A fan of points on a plane through p0 spanned by a and b
+        fun viuhka(t: Tunnistin, p0: V3, a: V3, b: V3, kamera: V3 = kam) = t.katse(
+            kamera, p0, p0 - a, p0 + a, p0 + b, p0 - b, listOf(p0 - a - b, p0 + a - b, p0 - a + b, p0 + a + b),
+        )
+        val t = Tunnistin()
+        val rnd = kotlin.random.Random(3)
+        repeat(60) {
+            val x = rnd.nextFloat() - 0.5f
+            val z = rnd.nextFloat() - 0.5f
+            // Ceiling above, floor below, a table top, a wall: whichever way the fan happens to be wound
+            val k = assertNotNull(viuhka(t, V3(x, 2.5f, z), V3.X * 0.15f, V3.Z * (if (it % 2 == 0) 0.15f else -0.15f)))
+            assertTrue(k.second.y < -0.99f, "katto osoittaa ${k.second}")
+            assertTrue(assertNotNull(viuhka(t, V3(x, 0f, z - 1f), V3.X * 0.15f, V3.Z * -0.15f)).second.y > 0.99f)
+            viuhka(t, V3(x * 0.8f, 0.72f, z * 0.5f - 1.5f), V3.X * 0.1f, V3.Z * 0.1f)
+            assertTrue(assertNotNull(viuhka(t, V3(x, 1f + z, -3f), V3.X * 0.15f, V3.Y * 0.15f)).second.z > 0.99f)
+        }
+        val lajit = t.pinnat(0f).map { it.laji }
+        assertEquals(listOf(PinnanLaji.POYTA, PinnanLaji.SEINA, PinnanLaji.KATTO), lajit.sorted(), "pinnat: $lajit")
+        assertTrue(t.pinnat(0f).first { it.laji == PinnanLaji.KATTO }.normaali.y < 0f)
+
+        // A fan across a corner is not flat: nothing comes of it
+        val t2 = Tunnistin()
+        repeat(40) {
+            assertNull(t2.katse(kam, V3(0f, 1f, -2f), V3(-0.2f, 1f, -2f), V3(0.2f, 1f, -1.7f), V3(0f, 1.2f, -2f), V3(0f, 0.8f, -2f)))
+            assertNull(t2.katse(kam, V3(0f, 1f, -2f), null, V3(0.2f, 1f, -2f), V3(0f, 1.2f, -2f), V3(0f, 0.8f, -2f)))
+        }
+        assertTrue(t2.pinnat(0f).isEmpty())
+
+        // When the camera's position jumps (tracking lost), what it sees next is not trusted for a moment
+        val t3 = Tunnistin()
+        assertNotNull(viuhka(t3, V3(0f, 2.5f, 0f), V3.X * 0.15f, V3.Z * 0.15f))
+        assertNull(viuhka(t3, V3(0f, 1.1f, 0f), V3.X * 0.15f, V3.Z * 0.15f, kam + V3(0.6f, 0f, 0f)))
+        assertNull(viuhka(t3, V3(0f, 1.1f, 0f), V3.X * 0.15f, V3.Z * 0.15f, kam + V3(0.6f, 0f, 0f)))
+        repeat(60) { viuhka(t3, V3(0f, 2.5f, 0f), V3.X * 0.15f, V3.Z * 0.15f, kam + V3(0.6f, 0f, 0f)) }
+        assertTrue(t3.pinnat(0f).none { it.laji == PinnanLaji.POYTA })
+
+        // A platform's own plane is turned to face the camera: a ceiling whose normal is given as "up" hangs down
+        val katto = assertNotNull(Tunnistin.tasosta("k", V3(0f, 2.5f, 0f), V3.X, V3.Y, listOf(-1f to -1f, 1f to -1f, 1f to 2f, -1f to 2f), kam, 0f))
+        assertEquals(PinnanLaji.KATTO, katto.laji)
+        assertTrue(katto.normaali.y < 0f && katto.sisalla(V3(0.5f, 2.5f, 1.8f)) && !katto.sisalla(V3(0.5f, 2.5f, -1.8f)))
+        val poyta = assertNotNull(Tunnistin.tasosta("p", V3(0f, 0.7f, 0f), V3.X, V3.Y, listOf(-1f to -1f, 1f to -1f, 1f to 2f, -1f to 2f), kam, 0f))
+        assertTrue(poyta.laji == PinnanLaji.POYTA && poyta.sisalla(V3(0.5f, 0.7f, 1.8f)) && !poyta.sisalla(V3(0.5f, 0.7f, -1.8f)))
+        assertNull(Tunnistin.tasosta("l", V3(0f, 0.02f, 0f), V3.X, V3.Y, listOf(-1f to -1f, 1f to -1f, 1f to 1f), kam, 0f))
+        // The underside of a table is no ceiling
+        assertNull(Tunnistin.tasosta("a", V3(0f, 0.7f, 0f), V3.X, V3.Y, listOf(-1f to -1f, 1f to -1f, 1f to 1f), V3(0f, 0.3f, 0f), 0f))
     }
 
     @Test
