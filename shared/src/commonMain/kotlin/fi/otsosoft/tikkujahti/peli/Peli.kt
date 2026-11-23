@@ -2,6 +2,7 @@ package fi.otsosoft.tikkujahti.peli
 
 import fi.otsosoft.tikkujahti.maailma.Maailma
 import fi.otsosoft.tikkujahti.maailma.PaikanLaji
+import fi.otsosoft.tikkujahti.maailma.Syvyyskartta
 import fi.otsosoft.tikkujahti.maailma.Paikat
 import fi.otsosoft.tikkujahti.maailma.PinnanLaji
 import fi.otsosoft.tikkujahti.maailma.Pinta
@@ -22,6 +23,8 @@ import fi.otsosoft.tikkujahti.ukko.Tyyppi
 import fi.otsosoft.tikkujahti.ukko.Ukko
 import fi.otsosoft.tikkujahti.ukko.Ulkonako
 import fi.otsosoft.tikkujahti.ukko.Vari
+import kotlin.math.min
+import kotlin.math.max
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan
@@ -139,6 +142,7 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         val dt = dt0.coerceIn(0.0001f, 0.05f)
         tapahtumat.clear()
         val lattia = maailma.lattia
+        paivitaPeitot(dt, kamera)
 
         // New figures arrive one at a time
         val paikalla = ukot.filter { !it.kiinni }.map { if (it.ryhma != 0) -it.ryhma else it.id }.distinct().size
@@ -751,6 +755,67 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         return (if (varjot.isNotEmpty() && rnd.nextFloat() < 0.7f) varjot else paikat).randomOrNull(rnd)?.piste?.let { lattia.lahinPiste(it, 0.06f) }
     }
 
+    /** The platform's latest depth image, where it gives one: figures behind real things are hidden by it. */
+    var syvyyskartta: Syvyyskartta? = null
+    /** Per figure: how long it has looked hidden (positive) or visible (negative), seconds. */
+    private val peittoAjat = HashMap<Ukko, Float>()
+
+    /**
+     * Decides which figures are behind something real and are not to be drawn: one in the next room, behind a
+     * sofa, round a corner. Whole figures, and only on clear evidence, because a wrongly hidden figure is much
+     * worse than one seen a moment too long: a body point counts as hidden when the depth image measured
+     * something well in front of it (tens of centimetres, more the further away), or a known wall stands
+     * between it and the player; most of the head, chest, hips and knees have to be hidden for a moment
+     * before the figure disappears, and most of them seen before it shows again.
+     */
+    private fun paivitaPeitot(dt: Float, kamera: Kamera) {
+        val kartta = syvyyskartta
+        val seinat = maailma.pinnat.filter { it.laji == PinnanLaji.SEINA }
+        peittoAjat.keys.retainAll(ukot.toSet())
+        for (u in ukot) {
+            val a = u.asento
+            if (u.kiinni || !a.nakyvissa) {
+                u.peitossa = false
+                peittoAjat.remove(u)
+                continue
+            }
+            val pisteet = listOf(a[Nivel.PAA], a[Nivel.RINTA], a[Nivel.LANTIO], (a[Nivel.POLVI_V] + a[Nivel.POLVI_O]) * 0.5f)
+            var mitattu = 0
+            var peitetty = 0
+            for (p in pisteet) {
+                val d = (p - kamera.paikka).pituus
+                if (d < 0.3f) continue
+                // A wall the figure itself is on (a climber) does not hide it
+                val seinanTakana = seinat.any { it !== u.lattia && it.id != u.lattia?.id && seinaValissa(it, kamera.paikka, p) }
+                val m = kartta?.etaisyys(p)
+                val syvyydenTakana = m != null && m > 0f && m < d - (PEITTOVARA + PEITTOVARA_SUHDE * d)
+                if (m != null || seinanTakana) mitattu++
+                if (seinanTakana || syvyydenTakana) peitetty++
+            }
+            val osuus = if (mitattu >= 2) peitetty.toFloat() / mitattu else 0f
+            var t = peittoAjat[u] ?: 0f
+            when {
+                osuus >= 0.74f -> {
+                    t = max(t, 0f) + dt
+                    if (t >= 0.25f) u.peitossa = true
+                }
+                osuus <= 0.5f -> {
+                    t = min(t, 0f) - dt
+                    if (t <= -0.15f) u.peitossa = false
+                }
+            }
+            peittoAjat[u] = t
+        }
+    }
+
+    /** Whether the wall [s] stands between [a] and [b]: they are on opposite sides of it, clearly, and the line meets it. */
+    private fun seinaValissa(s: Pinta, a: V3, b: V3): Boolean {
+        val da = s.etaisyys(a)
+        val db = s.etaisyys(b)
+        if (da * db >= 0f || min(abs(da), abs(db)) < 0.08f) return false
+        return s.sisalla(a + (b - a) * (da / (da - db)))
+    }
+
     /** For the figures: whether the way between two points on the floor is clear of known walls. */
     private val seinaton: (V3, V3) -> Boolean = { a, b -> esteeton(a + V3.Y * 0.1f, b + V3.Y * 0.1f) }
 
@@ -902,6 +967,9 @@ class Peli(siemen: Int = 1, val albumi: Albumi = Albumi(), val reppu: Reppu = Re
         const val AARTEEN_IKA = 50f
         /** Height of the imagined ceiling a ceiling figure hangs from when AR has found no real one. */
         const val OLETUSKATTO = 2.1f
+        /** A body point is hidden by depth only if something was measured this much in front of it: metres, plus a share of the distance. */
+        const val PEITTOVARA = 0.2f
+        const val PEITTOVARA_SUHDE = 0.06f
 
         /** How readily each special kind turns up, relative to the others. */
         private val YLEISYYS = mapOf(

@@ -13,6 +13,7 @@ import fi.otsosoft.tikkujahti.maailma.Ankkurit
 import fi.otsosoft.tikkujahti.maailma.Muunnos
 import fi.otsosoft.tikkujahti.maailma.PinnanLaji
 import fi.otsosoft.tikkujahti.maailma.Pinta
+import fi.otsosoft.tikkujahti.maailma.Syvyyskartta
 import java.nio.ByteOrder
 import fi.otsosoft.tikkujahti.matikka.Kehys
 import fi.otsosoft.tikkujahti.matikka.V3
@@ -148,6 +149,84 @@ object ArMaailma {
         } finally {
             kuva.close()
             luotettavuus?.close()
+        }
+    }
+
+    private var karttaAika = 0L
+    private var viimeKartta: Syvyyskartta? = null
+    private var karttaNahty = 0L
+
+    /**
+     * The newest smoothed depth image as a [Syvyyskartta], for telling whether figures are behind real things.
+     * Smoothed depth (not raw) because it covers the whole view. Kept while new images keep coming; an image
+     * more than a second old is not trusted, and on phones without depth there is none.
+     */
+    fun kartta(frame: Frame): Syvyyskartta? {
+        val kuva = try {
+            frame.acquireDepthImage16Bits()
+        } catch (e: Exception) {
+            null
+        }
+        if (kuva != null) {
+            try {
+                val t = kuva.timestamp
+                if (t != karttaAika) {
+                    karttaAika = t
+                    val w = kuva.width
+                    val h = kuva.height
+                    val taso = kuva.planes[0]
+                    val puskuri = taso.buffer.order(ByteOrder.LITTLE_ENDIAN)
+                    val mm = ShortArray(w * h)
+                    for (y in 0 until h) for (x in 0 until w) mm[y * w + x] = puskuri.getShort(y * taso.rowStride + x * taso.pixelStride)
+                    val intr = frame.camera.textureIntrinsics
+                    val koko = intr.imageDimensions
+                    val malli = FloatArray(16)
+                    frame.camera.pose.toMatrix(malli, 0)
+                    viimeKartta = SyvyysKuva(
+                        w, h, mm, malli,
+                        intr.focalLength[0] * w / koko[0], intr.focalLength[1] * h / koko[1],
+                        intr.principalPoint[0] * w / koko[0], intr.principalPoint[1] * h / koko[1],
+                    )
+                    karttaNahty = frame.timestamp
+                }
+            } catch (e: Exception) {
+            } finally {
+                kuva.close()
+            }
+        }
+        return if (frame.timestamp - karttaNahty < 1_000_000_000L) viimeKartta else null
+    }
+
+    /** One depth image (millimetres, sensor orientation) with the pose and lens it was taken with. */
+    private class SyvyysKuva(
+        val w: Int, val h: Int, val mm: ShortArray, val malli: FloatArray,
+        val fx: Float, val fy: Float, val cx: Float, val cy: Float,
+    ) : Syvyyskartta {
+        private val apu = IntArray(9)
+
+        override fun etaisyys(p: V3): Float? {
+            // Into the camera's space (x right, y up, looking down -z): the pose's rotation transposed
+            val dx = p.x - malli[12]
+            val dy = p.y - malli[13]
+            val dz = p.z - malli[14]
+            val x = malli[0] * dx + malli[1] * dy + malli[2] * dz
+            val y = malli[4] * dx + malli[5] * dy + malli[6] * dz
+            val z = malli[8] * dx + malli[9] * dy + malli[10] * dz
+            if (z > -0.1f) return null
+            val u = (fx * x / -z + cx).toInt()
+            val v = (cy - fy * y / -z).toInt()
+            if (u < 1 || v < 1 || u >= w - 1 || v >= h - 1) return null
+            // The median of the 3 × 3 around it: one wild pixel decides nothing
+            var n = 0
+            for (j in -1..1) for (i in -1..1) {
+                val arvo = mm[(v + j) * w + u + i].toInt() and 0xffff
+                if (arvo > 0) apu[n++] = arvo
+            }
+            if (n < 5) return null
+            apu.sort(0, n)
+            val syvyys = apu[n / 2] / 1000f
+            // Depth is along the camera's axis; the distance along the ray is longer off the axis
+            return syvyys * kotlin.math.sqrt(x * x + y * y + z * z) / -z
         }
     }
 

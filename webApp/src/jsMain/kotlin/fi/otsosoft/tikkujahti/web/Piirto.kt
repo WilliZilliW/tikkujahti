@@ -87,7 +87,8 @@ class UkkoPiirto(val ukko: Ukko) {
 
     fun paivita() {
         val a = ukko.asento
-        mesh.visible = a.nakyvissa
+        // Behind something real (Peli.paivitaPeitot): not drawn
+        mesh.visible = a.nakyvissa && !ukko.peitossa
         if (!mesh.visible) return
         // An invisible figure shows only its face
         keho.visible = !a.haamu

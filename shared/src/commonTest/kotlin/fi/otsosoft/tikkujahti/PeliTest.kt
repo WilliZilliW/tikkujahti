@@ -575,6 +575,38 @@ class PeliTest {
     }
 
     @Test
+    fun ukkoPiiloutuuVainOikeanEsteenTakana() {
+        val (peli, u) = peliYhdella(Tyyppi.TAVALLINEN)
+        fun pelaaJaKatso(sekunteja: Float): Pair<Boolean, Boolean> {
+            var koskaan = false
+            repeat((sekunteja * 60).toInt()) {
+                peli.paivita(dt, kamera)
+                if (u.peitossa) koskaan = true
+            }
+            return koskaan to u.peitossa
+        }
+        // Nothing in the way: never hidden
+        assertEquals(false, pelaaJaKatso(2f).first, "ukko piiloutui tyhjässä huoneessa")
+        // Depth that sees the floor behind the figure, with noise of ±15 cm: still never hidden
+        val rnd = kotlin.random.Random(7)
+        peli.syvyyskartta = fi.otsosoft.tikkujahti.maailma.Syvyyskartta { p ->
+            val suunta = (p - kamera.paikka).suunta()
+            if (suunta.y >= -0.01f) null else (-kamera.paikka.y / suunta.y) + (rnd.nextFloat() - 0.5f) * 0.3f
+        }
+        assertEquals(false, pelaaJaKatso(3f).first, "ukko piiloutui, vaikka syvyys näki vain lattian sen takana")
+        // Something real a metre in front of the player, between them and the figure: hidden, and back when it goes
+        peli.syvyyskartta = fi.otsosoft.tikkujahti.maailma.Syvyyskartta { 1.0f }
+        assertEquals(true, pelaaJaKatso(0.6f).second, "ukko ei piiloutunut esteen taakse")
+        peli.syvyyskartta = null
+        assertEquals(false, pelaaJaKatso(0.5f).second, "ukko ei palannut näkyviin")
+        // A known wall between the player and the figure hides it; one behind the figure does not
+        peli.maailma.asetaPinnat(listOf(lattia, Pinta.suorakaide("seina", PinnanLaji.SEINA, V3(0f, 1f, 0.6f), V3.Z, V3.X, 4f, 2f)))
+        assertEquals(true, pelaaJaKatso(0.6f).second, "ukko ei piiloutunut seinän taakse")
+        peli.maailma.asetaPinnat(listOf(lattia, Pinta.suorakaide("seina", PinnanLaji.SEINA, V3(0f, 1f, -1.2f), V3.Z, V3.X, 4f, 2f)))
+        assertEquals(false, pelaaJaKatso(0.6f).second, "seinä ukon takana piilotti sen")
+    }
+
+    @Test
     fun ukkoEiKavelyTunnetunSeinanLapi() {
         // A wall across the floor, and the player behind it: the figure wants to come closer, but not through it
         val seina = Pinta.suorakaide("seina", PinnanLaji.SEINA, V3(0f, 1f, -0.4f), V3.Z, V3.X, 4f, 2f)

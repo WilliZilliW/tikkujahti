@@ -124,7 +124,9 @@ class PeliSivu(private val juuri: HTMLElement) {
     private var pintaAjastin = 0f
     private var seuraavaTaso = 1
     private val aariviivat = Group()
-    private val syvyyspeitto = Syvyyspeitto(nakyma.scene)
+    private val xrSyvyys = XrSyvyys()
+    /** Floor height from the latest hit test straight ahead (not depth): the depth image is checked against it. */
+    private var osumaLattia: Float? = null
     private val viivat = ArrayList<LineLoop>()
     private val viivaAine = LineBasicMaterial(olio { color = 0xffffff; transparent = true; opacity = 0.35 })
     private var arLattia = false
@@ -438,6 +440,8 @@ class PeliSivu(private val juuri: HTMLElement) {
             haku = LattianHaku()
             for (a in xrAnkkurit.toList()) a.irrota()
             tunnistin = Tunnistin(ankkuriTehdas)
+            xrSyvyys.nollaa()
+            osumaLattia = null
             arAika = 0f
             for (i in osumalahteet.indices) osumalahteet[i] = null
             uusiPeli()
@@ -479,7 +483,7 @@ class PeliSivu(private val juuri: HTMLElement) {
 
     private fun lopetaAr() {
         ar = null
-        syvyyspeitto.eiSyvyytta()
+        peli.syvyyskartta = null
         for (a in xrAnkkurit.toList()) a.irrota()
         nykyRuutu = null
         nykyTila = null
@@ -545,19 +549,26 @@ class PeliSivu(private val juuri: HTMLElement) {
         nykyRuutu = xrRuutu
         nykyTila = tila
         for (a in xrAnkkurit.toList()) a.paivita(xrRuutu, tila)
-        // The depth image, where the browser gives one: every frame it hides figures behind real things, and
-        // every third frame it teaches the recogniser the room
-        val nakymaXr = if (asento != null && asento != undefined) asento.views[0] else null
-        val tieto = if (nakymaXr != null) syvyysTieto(xrRuutu, nakymaXr) else null
-        if (tieto != null) syvyyspeitto.syvyys(tieto, xrRuutu.session?.depthDataFormat as? String, nakymaXr.projectionMatrix) else syvyyspeitto.eiSyvyytta()
         // (while the phone has lost its place, nothing it sees is used)
         if (seuranta) {
             val keski = osumat[0]
-            if (keski != null && osumaYlos[0]) havaittu = keski.y
-            if (tieto != null && ++syvyysVuoro % 3 == 0) {
-                arSyvyys(tieto, nakymaXr)?.let { y -> havaittu = havaittu?.let { kotlin.math.min(it, y) } ?: y }
+            if (keski != null && osumaYlos[0]) {
+                havaittu = keski.y
+                if (kamera.paikka.y - keski.y > LattianHaku.VAHIMMAISKORKEUS) osumaLattia = keski.y
+            }
+            // The depth image, where the browser gives one (every third frame): once it is known which way up it
+            // reads, it tells which figures are behind real things and teaches the recogniser the room
+            val nakymaXr = if (asento != null && asento != undefined) asento.views[0] else null
+            if (nakymaXr != null && ++syvyysVuoro % 3 == 0) {
+                val tieto = syvyysTieto(xrRuutu, nakymaXr)
+                if (tieto != null) {
+                    xrSyvyys.kopioi(tieto, xrRuutu.session?.depthDataFormat as? String, nakymaXr, arAika)
+                    osumaLattia?.let { xrSyvyys.kalibroi(it) }
+                    if (xrSyvyys.alhaaltaYlos != null) arSyvyys()?.let { y -> havaittu = havaittu?.let { kotlin.math.min(it, y) } ?: y }
+                }
             }
         }
+        peli.syvyyskartta = xrSyvyys.kartta(arAika)
         haku.ruutu(dt, kamera.paikka, havaittu)
         val lattia = haku.lattia(kamera.paikka) ?: return
         pintaAjastin -= dt
@@ -583,6 +594,66 @@ class PeliSivu(private val juuri: HTMLElement) {
         }
     }
 
+    /**
+     * A check without a phone (kuvatila, `syvyyskoe=1` or `2`): a made-up depth image of the room's floor, laid
+     * out top-down (1, as the specification says) or bottom-up (2, as Chrome's sample reads it), is fed through
+     * [XrSyvyys]. It has to learn the right way up, and then no figure may be hidden; with a "wall" a metre in
+     * front of the camera every figure in view must be. The results are logged as SYVYYSKOE lines.
+     */
+    private fun syvyyskoe(alhaaltaYlos: Boolean) {
+        val paikka = V3(0f, 1.3f, 1.6f)
+        val k = Kehys.luo(V3(0f, -0.8f, -1f))
+        val f = 1f / kotlin.math.tan(0.5f)
+        val suhde = 0.5f
+        val proj = arrayOf(f / suhde, 0f, 0f, 0f, 0f, f, 0f, 0f, 0f, 0f, -1.0f, -1f, 0f, 0f, -0.1f, 0f).map { it.toDouble() }.toTypedArray()
+        val nakymaMatriisi = arrayOf(
+            k.oikealle.x, k.oikealle.y, k.oikealle.z, 0f, k.ylos.x, k.ylos.y, k.ylos.z, 0f,
+            -k.eteen.x, -k.eteen.y, -k.eteen.z, 0f, paikka.x, paikka.y, paikka.z, 1f,
+        ).map { it.toDouble() }.toTypedArray()
+        val nakymaXr = olio {
+            projectionMatrix = proj
+            transform = olio { matrix = nakymaMatriisi }
+        }
+        val w = 32
+        val h = 24
+        fun kuva(seina: Boolean): dynamic {
+            val metrit = FloatArray(w * h)
+            for (j in 0 until h) for (i in 0 until w) {
+                val u = (i + 0.5f) / w
+                val vYlhaalta = if (alhaaltaYlos) 1f - (j + 0.5f) / h else (j + 0.5f) / h
+                // The ray through this view point, as plane depth 1
+                val x = (2f * u - 1f) / (f / suhde)
+                val y = (1f - 2f * vYlhaalta) / f
+                val suunta = k.oikealle * x + k.ylos * y + k.eteen
+                metrit[j * w + i] = if (seina) 1.0f else if (suunta.y < -0.01f) -paikka.y / suunta.y else 0f
+            }
+            return olio {
+                width = w
+                height = h
+                rawValueToMeters = 1.0
+                data = metrit.asDynamic().buffer
+                normDepthBufferFromNormView = olio { matrix = arrayOf(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0) }
+            }
+        }
+        val s = XrSyvyys()
+        repeat(10) {
+            s.kopioi(kuva(false), "float32", nakymaXr, 0f)
+            s.kalibroi(0f)
+        }
+        console.log("SYVYYSKOE suunta: odotettu alhaaltaYlos=$alhaaltaYlos, opittu=${s.alhaaltaYlos}")
+        val kam = Kamera(paikka, k, kotlin.math.tan(0.5f), suhde)
+        fun piilossa(): String {
+            peli.syvyyskartta = s.kartta(0f)
+            repeat(60) { peli.paivita(1f / 60f, kam) }
+            val nakyvat = peli.ukot.filter { kam.ruudulla(it.keskipiste).third }
+            return "${nakyvat.count { it.peitossa }}/${nakyvat.size} näkyvissä olevaa ukkoa piilossa"
+        }
+        console.log("SYVYYSKOE pelkkä lattia: " + piilossa())
+        s.kopioi(kuva(true), "float32", nakymaXr, 0f)
+        console.log("SYVYYSKOE seinä metrin päässä: " + piilossa())
+        peli.syvyyskartta = null
+    }
+
     /** This frame's depth image of [nakyma] (WebXR depth sensing, CPU), or null if the browser gives none. */
     private fun syvyysTieto(xrRuutu: dynamic, nakyma: dynamic): dynamic {
         // Only CPU depth can be read here (a GPU-only session would throw on every read)
@@ -597,34 +668,29 @@ class PeliSivu(private val juuri: HTMLElement) {
     }
 
     /**
-     * Samples the depth image [tieto] of [nakyma] into a grid of world points for the recogniser. Returns the
-     * floor height it saw, if any.
+     * Samples the copied depth image into a grid of world points for the recogniser. Returns the floor height it
+     * saw, if any.
      */
-    private fun arSyvyys(tieto: dynamic, nakyma: dynamic): Float? {
-        val p = nakyma.projectionMatrix
-        val m = nakyma.transform.matrix
-        val p0 = (p[0] as Double).toFloat()
-        val p5 = (p[5] as Double).toFloat()
-        val p8 = (p[8] as Double).toFloat()
-        val p9 = (p[9] as Double).toFloat()
-        val mm = FloatArray(16) { (m[it] as Double).toFloat() }
+    private fun arSyvyys(): Float? {
+        val s = xrSyvyys
+        val p0 = s.proj(0)
+        val p5 = s.proj(5)
+        val p8 = s.proj(8)
+        val p9 = s.proj(9)
+        val mm = FloatArray(16) { s.nakyma(it) }
         for (gy in 0 until RIVEJA) for (gx in 0 until SARAKKEITA) {
-            // Normalised view coordinates: origin top left, y down
-            val u = (gx + 0.5) / SARAKKEITA
-            val v = (gy + 0.5) / RIVEJA
-            val d = try {
-                (tieto.getDepthInMeters(u, v) as Double).toFloat()
-            } catch (e: Throwable) {
-                0f
-            }
+            // View coordinates 0…1, v from the top
+            val u = (gx + 0.5f) / SARAKKEITA
+            val v = (gy + 0.5f) / RIVEJA
+            val d = s.tasoSyvyys(u, v)
             val o = (gy * SARAKKEITA + gx) * 3
             if (!(d > 0f)) {
                 ruudukko[o] = Float.NaN; ruudukko[o + 1] = Float.NaN; ruudukko[o + 2] = Float.NaN
                 continue
             }
             // Depth is the distance from the camera's plane; back through the lens into view space (looking down -z)
-            val ndcX = (2.0 * u - 1.0).toFloat()
-            val ndcY = (1.0 - 2.0 * v).toFloat()
+            val ndcX = 2f * u - 1f
+            val ndcY = 1f - 2f * v
             val x = d * (ndcX + p8) / p0
             val y = d * (ndcY + p9) / p5
             val z = -d
@@ -632,7 +698,7 @@ class PeliSivu(private val juuri: HTMLElement) {
             ruudukko[o + 1] = mm[1] * x + mm[5] * y + mm[9] * z + mm[13]
             ruudukko[o + 2] = mm[2] * x + mm[6] * y + mm[10] * z + mm[14]
         }
-        return tunnistin.syvyys(arAika, kamera.paikka, kamera.kehys.eteen, ruudukko, SARAKKEITA, RIVEJA)
+        return tunnistin.syvyys(arAika, s.kamera, s.eteen, ruudukko, SARAKKEITA, RIVEJA)
     }
 
     /** The planes the browser itself has detected (WebXR plane detection, where the device offers it). */
@@ -659,8 +725,6 @@ class PeliSivu(private val juuri: HTMLElement) {
 
     /** Faint outlines of every recognised surface, so the player sees what the game has understood of the room. */
     private fun piirraAariviivat(pinnat: List<Pinta>) {
-        // Recognised walls and table tops also hide the figures behind them
-        syvyyspeitto.pinnat(pinnat)
         for (v in viivat) {
             aariviivat.remove(v); v.geometry.dispose()
         }
@@ -804,26 +868,7 @@ class PeliSivu(private val juuri: HTMLElement) {
         naytaPisteet()
         naytaPallot()
         if (p.get("albumi") != null) naytaAlbumi()
-        // A check of the depth occlusion without AR: a made-up depth image with a "wall" 1.2 m away over the
-        // right half of the view must hide everything behind it there (the room, the figures)
-        if (p.get("syvyystesti") != null) {
-            nakyma.kamera.updateMatrixWorld()
-            val w = 8
-            val h = 6
-            val metrit = FloatArray(w * h) { i -> if (i % w >= w / 2) 1.2f else 0f }
-            val tieto = olio {
-                width = w
-                height = h
-                rawValueToMeters = 1.0
-                data = metrit.asDynamic().buffer
-                normDepthBufferFromNormView = olio { matrix = arrayOf(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0) }
-            }
-            syvyyspeitto.syvyys(tieto, "float32", nakyma.kamera.projectionMatrix.elements)
-        }
-        // ...and a recognised wall's stand-in: a wall across the left half, between the player and the figures
-        if (p.get("seinatesti") != null) {
-            syvyyspeitto.pinnat(listOf(Pinta.suorakaide("testiseina", PinnanLaji.SEINA, V3(-0.8f, 0.5f, 0.6f), V3.Z, V3.X, 1.6f, 1.0f)))
-        }
+        p.get("syvyyskoe")?.let { syvyyskoe(it == "2") }
         nakyma.piirra()
         window.asDynamic().kuvaValmis = true
     }

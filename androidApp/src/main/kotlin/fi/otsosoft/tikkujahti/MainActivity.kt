@@ -70,8 +70,6 @@ import fi.otsosoft.tikkujahti.peli.Pyyhkaisy
 import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberMaterialLoader
-import io.github.sceneview.ar.createARCameraStream
-import io.github.sceneview.ar.rememberARCameraStream
 import io.github.sceneview.rememberScene
 
 class MainActivity : ComponentActivity() {
@@ -144,6 +142,8 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
         // keeps its surfaces on ARCore anchors so they follow tracking's corrections
         val tunnistin = this.tunnistin ?: Tunnistin(ArMaailma.ankkurit(session)).also { this.tunnistin = it }
         val nahtyLattia = ArMaailma.syvyys(frame, kamera, tunnistin)
+        // Figures behind real things are hidden: the game decides it per figure from the depth image
+        peli.syvyyskartta = ArMaailma.kartta(frame)
         // Until ARCore has found the floor, play on one seen in depth or, failing that, a guessed one, so that
         // figures turn up without a wait
         haku.ruutu(dt, kamera.paikka, nahtyLattia)
@@ -250,14 +250,6 @@ class PeliTila(albumi: Albumi, reppu: Reppu, private val tallenna: (Albumi, Repp
 fun PeliNakyma() {
     val engine = rememberEngine()
     val materiaalit = rememberMaterialLoader(engine)
-    // The camera feed writes the real room's depth where the phone measures it, so figures behind real things
-    // (a wall, a sofa) are hidden; the recognised walls' stand-ins (Piirtaja) hide them also without depth
-    val kameravirta = rememberARCameraStream(materiaalit) {
-        createARCameraStream(materiaalit).apply {
-            isDepthOcclusionEnabled = true
-            isOccluderMeshEnabled = true
-        }
-    }
     val scene = rememberScene(engine)
     val muisti = LocalContext.current.getSharedPreferences("tikkujahti", Context.MODE_PRIVATE)
     val tila = remember {
@@ -302,7 +294,6 @@ fun PeliNakyma() {
             engine = engine,
             materialLoader = materiaalit,
             scene = scene,
-            cameraStream = kameravirta,
             planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL,
             // Depth, where the phone has it, lets the game measure surfaces ARCore makes no planes of
             depthMode = Config.DepthMode.AUTOMATIC,

@@ -88,6 +88,8 @@ class Ukko(
      * choose to walk through a wall: a figure behind one would vanish behind its stand-in.
      */
     var esteeton: ((V3, V3) -> Boolean)? = null
+    /** Behind something real as seen from the player (the game decides this, see Peli.paivitaPeitot): not drawn. */
+    var peitossa = false
     /** World height of the real floor, where a knocked figure falls to. */
     var maanTaso: Float? = null
     private var pintaM: Pinta? = null
